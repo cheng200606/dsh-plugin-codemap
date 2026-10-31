@@ -1,0 +1,44 @@
+{
+  "name": "dsh-plugin-repowiki",
+  "version": "0.10.0",
+  "private": true,
+  "type": "module",
+  "description": "Source-grounded repository wiki for the DeepSeek Harness: plan, generate, verify and serve wiki pages with path:line citations.",
+  "license": "MIT",
+  "main": "./index.js",
+  "engines": {
+    "dsh": ">=0.2.1-rc.5",
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/**/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "keywords": [
+    "dsh",
+    "cordis",
+    "wiki",
+    "repository",
+    "documentation"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

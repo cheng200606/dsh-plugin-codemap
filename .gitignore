@@ -1,0 +1,15 @@
+# Generated plugin artefacts (rebuildable from source)
+.dsh/
+.qoder/
+node_modules/
+
+# Local run logs and probes
+*.log
+web-boot*.log
+headless-stderr.log
+图片*.png
+Qoder示例.png
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
