@@ -10,6 +10,8 @@
 
 整个生成过程**不调用任何模型**：证据由代码算出、引用逐条校验，因此离线可跑、结果可复算、不会凭空编造。
 
+<img src="docs/assets/cover.png" alt="CodeMap 面板总览" width="100%">
+
 | 概览 | 知识图谱 | 源码跳转 |
 |---|---|---|
 | ![overview](docs/assets/repowiki-overview-v011.png) | ![graph](docs/assets/repowiki-graph-v011.png) | ![source](docs/assets/repowiki-source-v011.png) |

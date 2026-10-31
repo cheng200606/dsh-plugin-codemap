@@ -21,6 +21,7 @@
     "check:version": "node scripts/check-version.mjs",
     "check:client": "node scripts/build-client.mjs --check",
     "test": "node test/client-graph.mjs && node test/local-e2e.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
     "check": "node scripts/build-client.mjs && node scripts/check-version.mjs && node test/client-graph.mjs && node test/local-e2e.mjs",
     "prepublishOnly": "node scripts/build-client.mjs && node scripts/check-version.mjs"
   },
