@@ -57,11 +57,12 @@ export function renderPage(pack, meta = {}) {
   const sections = [
     renderScope(pack, meta),
     renderClaims(pack),
+    renderNarrative(pack),
     renderDiagram(pack, meta),
     renderDetails(pack),
     renderSourceIndex(pack),
     renderOpenQuestions(pack),
-  ]
+  ].filter((section) => Boolean(section))
   const title = stringOrEmpty(meta?.title)
   const body = [`# ${title}`, '', ...sections].join('\n\n')
   return `${front}\n${body}`
@@ -112,6 +113,14 @@ function formatCitations(citations) {
   return tokens.join('、')
 }
 
+/** `## 设计意图与实现要点` — the deterministic narrative v2. */
+function renderNarrative(pack) {
+  const narrative = Array.isArray(pack?.narrative) ? pack.narrative : []
+  const usable = narrative.map((sentence) => stringOrEmpty(sentence)).filter(Boolean)
+  if (usable.length === 0) return ''
+  return ['## 设计意图与实现要点', '', ...usable.map((sentence) => `- ${sentence}`)].join('\n')
+}
+
 /** `## 结构与流程` — a mermaid diagram derived from the page id. */
 function renderDiagram(pack, meta) {
   const id = stringOrEmpty(meta?.id) || stringOrEmpty(pack?.pageId)
@@ -119,8 +128,35 @@ function renderDiagram(pack, meta) {
   return ['## 结构与流程', '', '```mermaid', 'graph TD', body, '```'].join('\n')
 }
 
-/** `## 实现细节` — one bullet per key file. */
+/** `## 实现细节` — one bullet per key file, enriched with indexed facts. */
 function renderDetails(pack) {
+  const digests = Array.isArray(pack?.fileDigests) ? pack.fileDigests : []
+  if (digests.length > 0) {
+    const lines = ['## 实现细节', '']
+    for (const digest of digests) {
+      const path = toPosix(stringOrEmpty(digest?.path))
+      if (!path) continue
+      const role = stringOrEmpty(digest?.role) || 'core'
+      const parts = []
+      if (Array.isArray(digest.symbols) && digest.symbols.length > 0) {
+        parts.push(`关键符号 ${digest.symbols.map((symbol) => `\`${symbol}\``).join('、')}`)
+      }
+      if (Array.isArray(digest.routes) && digest.routes.length > 0) {
+        parts.push(`注册 ${digest.routes.join('、')}`)
+      }
+      if (Array.isArray(digest.configKeys) && digest.configKeys.length > 0) {
+        parts.push(`读取配置 ${digest.configKeys.map((key) => `\`${key}\``).join('、')}`)
+      }
+      if (Array.isArray(digest.dependents) && digest.dependents.length > 0) {
+        parts.push(`被 ${digest.dependents.length} 个文件引用`)
+      }
+      const detail = parts.length > 0 ? parts.join('；') : describeRole(role)
+      const citation = stringOrEmpty(digest.citation)
+      lines.push(`- \`${path}\`（${role}）：${detail}。${citation ? ` 证据：${citation}` : ''}`.replace(/\s+$/, ''))
+    }
+    if (lines.length === 2) lines.push('- 暂无。')
+    return lines.join('\n')
+  }
   const keyFiles = Array.isArray(pack?.keyFiles) ? pack.keyFiles : []
   const lines = ['## 实现细节', '']
   if (keyFiles.length === 0) {

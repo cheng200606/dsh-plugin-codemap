@@ -286,6 +286,31 @@ export async function collectEvidence(fs, plan, index = {}, scan = {}, options =
     symbolsByPath.get(symbol.path).push(symbol)
   }
 
+  // Import / route / config maps: the narrative layer turns these into
+  // readable "what this file owns and who depends on it" sentences. They are
+  // derived from the index, so every sentence is grounded in a real line.
+  const importsOut = new Map()
+  const importsIn = new Map()
+  for (const pair of Array.isArray(index?.fileImports) ? index.fileImports : []) {
+    if (!pair?.from || !pair?.to) continue
+    if (!importsOut.has(pair.from)) importsOut.set(pair.from, new Set())
+    if (!importsIn.has(pair.to)) importsIn.set(pair.to, new Set())
+    importsOut.get(pair.from).add(pair.to)
+    importsIn.get(pair.to).add(pair.from)
+  }
+  const routesByFile = new Map()
+  for (const route of routes) {
+    if (!route?.file) continue
+    if (!routesByFile.has(route.file)) routesByFile.set(route.file, [])
+    routesByFile.get(route.file).push(route)
+  }
+  const configByFile = new Map()
+  for (const key of configKeys) {
+    if (!key?.file) continue
+    if (!configByFile.has(key.file)) configByFile.set(key.file, [])
+    configByFile.get(key.file).push(key)
+  }
+
   const reader = createReader(fs, root, signal, budget, warnings)
   const fallbackFiles = biggestSourceFiles(index, scan, fileSet)
 
@@ -471,9 +496,11 @@ export async function collectEvidence(fs, plan, index = {}, scan = {}, options =
     }
 
     const keyFileEntries = []
+    const fileDigests = []
     for (const file of keyFiles) {
       const record = await reader.get(file.path)
-      const symbol = (symbolsByPath.get(file.path) ?? [])[0]
+      const fileSymbols = symbolsByPath.get(file.path) ?? []
+      const symbol = fileSymbols[0]
       let lines
       if (symbol) {
         const range = record
@@ -482,13 +509,36 @@ export async function collectEvidence(fs, plan, index = {}, scan = {}, options =
         if (range && range[0] > 0) lines = [range[0], range[1]]
       }
       keyFileEntries.push(lines ? { path: file.path, role: file.role, lines } : { path: file.path, role: file.role })
+
+      // One digest per key file: the structured facts the narrative layer and
+      // the "实现细节" section are allowed to state.
+      const count = record?.count ?? 0
+      fileDigests.push({
+        path: file.path,
+        role: file.role,
+        symbols: fileSymbols.slice(0, 6).map((entry) => entry.name),
+        imports: [...(importsOut.get(file.path) ?? [])].slice(0, 6),
+        dependents: [...(importsIn.get(file.path) ?? [])].slice(0, 6),
+        routes: (routesByFile.get(file.path) ?? []).map((route) => routeLabel(route)).slice(0, 6),
+        configKeys: (configByFile.get(file.path) ?? []).map((key) => key.key).slice(0, 6),
+        doc: symbol?.doc ?? '',
+        lines: count,
+        citation: count > 0 ? citationToken(file.path, 1, count) : '',
+      })
     }
+
+    // Narrative v2 — deterministic sentences built only from indexed facts and
+    // source comments. No model, no invention: every sentence carries a
+    // citation, and the sentence disappears when its evidence is missing.
+    const narrative = buildNarrative(document, fileDigests)
 
     packs.push({
       pageId: document?.id ?? '',
       goal: document?.goal ?? '',
       claims: limited,
       keyFiles: keyFileEntries,
+      fileDigests,
+      narrative,
       callPaths: [],
       openQuestions: buildOpenQuestions(keyFiles, symbolsByPath, usedFiles),
     })
@@ -681,6 +731,137 @@ function findLine(lines, needle) {
     if (lines[index].includes(target)) return index + 1
   }
   return 0
+}
+
+/* ------------------------------------------------------------------ *
+ * Narrative v2
+ * ------------------------------------------------------------------ */
+
+/**
+ * A small bilingual lexicon for path tokens.
+ *
+ * It exists for retrieval, not for translation: a Chinese question such as
+ * "面板怎么注册路由" should find a page whose source file is `client.js` and
+ * whose symbols are English. The label is attached to a sentence that also
+ * carries a real citation, so the page never gains an unsourced claim.
+ */
+const PATH_GLOSSARY = {
+  api: '接口',
+  app: '应用',
+  client: '客户端',
+  command: '命令',
+  commands: '命令',
+  config: '配置',
+  core: '核心',
+  doc: '文档',
+  docs: '文档',
+  evidence: '证据',
+  graph: '图谱',
+  index: '索引',
+  indexer: '索引器',
+  markdown: 'Markdown 解析',
+  panel: '面板',
+  plan: '规划',
+  prompt: '提示词',
+  render: '渲染',
+  route: '路由',
+  routes: '路由',
+  scan: '扫描',
+  schema: '数据结构',
+  search: '检索',
+  server: '服务端',
+  service: '服务层',
+  store: '存储',
+  storage: '存储',
+  test: '测试',
+  tests: '测试',
+  tool: '工具',
+  tools: '工具',
+  ui: '界面',
+  util: '工具函数',
+  utils: '工具函数',
+  verify: '校验',
+  web: 'Web 前端',
+  yaml: 'YAML',
+}
+
+/** The Chinese role label of a path (first recognised token wins). */
+function moduleRoleLabel(path) {
+  const tokens = String(path ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  for (const token of tokens) {
+    if (PATH_GLOSSARY[token]) return PATH_GLOSSARY[token]
+  }
+  return '实现'
+}
+
+/** `` `path:start-end` `` — the token form the verifier recognises. */
+function citationToken(path, start, end) {
+  return `\`${toPosix(path)}:${Math.max(1, start)}-${Math.max(start, end)}\``
+}
+
+/** Human label of a route record. */
+function routeLabel(route) {
+  const method = String(route?.method ?? '').trim()
+  const path = String(route?.route ?? route?.path ?? '').trim()
+  if (method && path) return `${method} ${path}`
+  return path || method || '未命名路由'
+}
+
+/**
+ * Build the deterministic narrative of one page.
+ *
+ * The sentences are a projection of the index, not a summary written by a
+ * model: symbols, imports, dependents, routes and config keys come from the
+ * indexer, while "源码注释说明" quotes the first JSDoc line verbatim. Every
+ * sentence that talks about a file carries that file's citation.
+ *
+ * @param {object} document
+ * @param {Array<object>} digests
+ * @returns {string[]}
+ */
+function buildNarrative(document, digests) {
+  const usable = (digests ?? []).filter((digest) => digest?.path)
+  if (usable.length === 0) return []
+  const pageId = String(document?.id ?? '')
+  const subject = pageId.startsWith('module-')
+    ? `模块 ${String(usable[0].path).split('/').slice(0, -1).pop() || String(usable[0].path)}`
+    : moduleRoleLabel(usable[0].path)
+  const totalLines = usable.reduce((sum, digest) => sum + (Number(digest.lines) || 0), 0)
+  const sentences = []
+
+  if (usable.length > 1 || pageId.startsWith('module-')) {
+    sentences.push(
+      `本页聚焦「${subject}」相关实现：覆盖 ${usable.length} 个源码文件，约 ${totalLines} 行。${usable[0].citation || ''}`.trim(),
+    )
+  }
+
+  for (const digest of usable.slice(0, 6)) {
+    const parts = []
+    if (digest.symbols?.length) parts.push(`关键符号包括 ${digest.symbols.slice(0, 4).join('、')}`)
+    if (digest.imports?.length) parts.push(`直接依赖 ${digest.imports.slice(0, 3).join('、')}`)
+    if (digest.dependents?.length) parts.push(`被 ${digest.dependents.slice(0, 3).join('、')} 引用`)
+    if (digest.routes?.length) parts.push(`注册了 ${digest.routes.join('、')}`)
+    if (digest.configKeys?.length) parts.push(`读取配置 ${digest.configKeys.join('、')}`)
+    if (digest.doc) parts.push(`源码注释说明：${digest.doc}`)
+    if (parts.length === 0) continue
+    sentences.push(
+      `\`${digest.path}\` 属于「${moduleRoleLabel(digest.path)}」相关实现：${parts.join('；')}。${digest.citation || ''}`.trim(),
+    )
+  }
+
+  // The most depended-on file is a useful "start here" hint; it is only stated
+  // when the index actually has an inbound edge.
+  const hub = [...usable]
+    .filter((digest) => (digest.dependents?.length ?? 0) > 0)
+    .sort((a, b) => (b.dependents?.length ?? 0) - (a.dependents?.length ?? 0))[0]
+  if (hub && usable.length > 1) {
+    sentences.push(
+      `从依赖方向看，\`${hub.path}\` 是入口附近的汇点：共有 ${hub.dependents.length} 个文件引用它。${hub.citation || ''}`.trim(),
+    )
+  }
+
+  // Keep the section readable: six file sentences plus at most two summaries.
+  return sentences.slice(0, 8)
 }
 
 /* ------------------------------------------------------------------ *

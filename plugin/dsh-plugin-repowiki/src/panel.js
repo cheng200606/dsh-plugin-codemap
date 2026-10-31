@@ -5,7 +5,7 @@
  * what these functions return. Keeping the assembly here means the panel and
  * the model tools can never disagree about what the wiki contains.
  */
-import { loadMetadata, parseFrontmatter } from './store.js'
+import { GENERATOR_VERSION, loadMetadata, parseFrontmatter } from './store.js'
 import { parseMarkdownBlocks } from './markdown.js'
 
 /**
@@ -49,6 +49,9 @@ export async function buildPanelPayload(service, root, options = {}) {
       root: repository,
       outputDir: service.config.outputDir,
       language,
+      // The version of the *running host*, not of the wiki on disk: the client
+      // compares it with its own constant to detect a stale browser bundle.
+      serverVersion: GENERATOR_VERSION,
       exists: false,
       generatedAt: null,
       generator: null,
@@ -71,6 +74,7 @@ export async function buildPanelPayload(service, root, options = {}) {
       sections: [],
       cards: [],
       roots: rootChoices(service, repository),
+      availableLanguages: [],
       run: await service.readRunJournal(repository, language),
       client,
       webUrl: client.webUrl ?? null,
@@ -96,6 +100,10 @@ export async function buildPanelPayload(service, root, options = {}) {
       citationCount: citations.length,
       sourceCount: page.sources?.files?.length ?? 0,
       symbolCount: page.sources?.symbols?.length ?? 0,
+      // First few source files: the graph uses them to jump from a module node
+      // to the wiki page that documents it.
+      files: (page.sources?.files ?? []).slice(0, 12),
+      symbols: (page.sources?.symbols ?? []).slice(0, 12),
       generatedAt: page.generatedAt ?? null,
       hash: page.hashes?.output ?? null,
     })
@@ -116,6 +124,7 @@ export async function buildPanelPayload(service, root, options = {}) {
     root: repository,
     outputDir: service.config.outputDir,
     language,
+    serverVersion: GENERATOR_VERSION,
     exists: true,
     generatedAt: meta.generatedAt ?? null,
     generator: meta.generator ?? null,
@@ -145,11 +154,17 @@ export async function buildPanelPayload(service, root, options = {}) {
       tag: card.tag ?? (card.tags ?? [])[0] ?? '',
       summary: card.summary ?? '',
       parent: card.parent ?? null,
+      scope: card.scope ?? null,
+      confidence: card.confidence ?? 'medium',
+      sources: card.sources ?? [],
     })),
     // The workspace selector entries, each annotated with the wiki state of
     // that repository — the data behind the "projects" overview.
     projects: await projectOverviews(service, repository, language),
     roots: rootChoices(service, repository),
+    // Languages with pages on disk; the header uses it to explain a missing
+    // translation instead of silently rendering an empty wiki.
+    availableLanguages: await service.availableLanguages(repository),
     run: await service.readRunJournal(repository, language),
     client,
     webUrl: client.webUrl ?? null,

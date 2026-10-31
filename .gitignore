@@ -9,6 +9,7 @@ web-boot*.log
 headless-stderr.log
 图片*.png
 Qoder示例.png
+plugin/dsh-plugin-repowiki/test/artifacts/
 
 # Editor / OS noise
 .DS_Store

@@ -1,7 +1,7 @@
 # dsh-plugin-repowiki 插件实现与交付报告
 
 > 版本 v1.0 ｜ 日期 2026-10-31 ｜ 作者：DSH Harness 插件实现任务
-> **最新变更见 §15（v0.10：图谱拖拽 + UI 重构）**；§0–§14 为历史迭代记录，涉及“5 条路由 / 28 项测试 / 0.4.0”等表述以 §15 为准。
+> **最新变更见 §16（v0.11：P0/P1/P2 系统修复）**；§0–§15 为历史迭代记录，涉及“5 条路由 / 28 项测试 / 0.4.0 / 0.10.0”等表述以 §16 为准。
 > 关联文档：[Qoder Repo Wiki 深度调研与 DeepSeek Harness 插件设计方案](qoder-repo-wiki-research-and-dsh-plugin-design.md)（下称「设计文档」）
 
 ---
@@ -16,7 +16,7 @@
 | 能装进 Harness 吗？ | 能。`install_bundle` 返回 `application: "applied"`、`exitCode: 0`，无警告 | 见 §4.2 |
 | 装上之后真的跑了吗？ | 跑了。本机 profile 里真实调用了 `wiki_generate` / `wiki_search` / `wiki_read`，磁盘上生成了 15 个产物文件 | 见 §4.4 |
 | 引用是真的吗？ | 是。8 个页面 **122 条引用全部指向真实文件的真实行号**，插件自校验 122/122 有效，去重覆盖 **28 个源文件**（仓库共 44 个可索引文件） | 见 §4.4 |
-| 有界面入口吗？ | 有，且**已在真实浏览器里点开过**。左侧栏图标（`sidebar.panellist`）+ 中央面板（`main`），数据走 5 条精确 Fetch 路由；实机证据：回执 `registered.panel=true`、`routes` 5 条、`client.composed=true`+`served 42 456 B`、Playwright 截图 `ui-40-panel.png` | 见 §4.5、§9.5、[面板与竞品分析](repowiki-panel-and-competitive-analysis.md) |
+| 有界面入口吗？ | 有，且**已在真实浏览器里点开过**。左侧栏图标（`sidebar.panellist`）+ 中央面板（`main`），数据走 12 条精确 Fetch 路由（含图谱/源码/导入/导出）；v0.11 真机证据：面板 10 页/10 卡/155 引用、引用抽屉、图谱拖拽、窄屏抽屉，0 console error（截图 `docs/assets/repowiki-*-v011.png`） | 见 §4.5、§9.5、§16、[面板与竞品分析](repowiki-panel-and-competitive-analysis.md) |
 | 增量更新可用吗？ | 可用。同一次验收里 `mode:"update"` 实测 `written=0 / skipped=8`、耗时 208 ms → 67 ms，页面时间戳未被刷新 | 见 §4.4.6 |
 | 与设计文档有出入吗？ | 有 15 处，均为「实机约束优先」的主动取舍，已在 §6 逐条列出并给出理由 | 见 §6 |
 | 踩坑多吗？ | 多，共 42 项已记录并逐条给出处理方式（24 项实现缺陷 + 12 项宿主 API 坑 + 6 项流程问题，另附 3 个测试脚本自身 bug） | 见 §5、§9.6 |
@@ -72,7 +72,7 @@ flowchart LR
 | `wiki_read` | 模型工具 | `page_id` | `page_id,title,path,status,markdown,truncated` | ✅ 已在 Harness 中调用成功 |
 | `/wiki` | 斜杠命令 | `status\|plan\|generate\|update\|export\|import\|help` | `{kind:'success'\|'error', text}` | ✅ 已注册（`runtime.json` 回执记录） |
 | `repowiki:policy` | 系统提示词段 | — | 5 句前缀稳定文本（≈ 90 token） | ✅ 已注册（`runtime.json` 回执记录） |
-| `GET/POST /api/repowiki/*` | 精确 Fetch 路由 | `panel`、`page?id=`、`search?q=`、`generate`(POST)、`app`（自包含降级页） | JSON / HTML（`Response.json` / `Response`） | ✅ 5 条全部注册（回执 `registered.routes`） |
+| `GET/POST /api/repowiki/*` | 精确 Fetch 路由 | `panel`、`page?id=`、`search?q=`、`generate`(POST)、`progress`、`abort`、`export`、`import`、`source`、`graph`、`impact`、`app`（自包含降级页） | JSON / HTML（`Response.json` / `Response`） | ✅ 12 条全部注册（回执 `registered.routes`） |
 | 侧栏图标 + 主面板 | 客户端槽位 | `sidebar.panellist`（id=`repowiki`, order=50）+ `main`（key=`repowiki`） | 浏览器渲染 | ⚠️ 代码与单测完成；真机需重启进程加载（见 §4.5） |
 
 ### 2.2 内部模块
@@ -595,7 +595,7 @@ node test/probe-coverage.mjs .   # 可选：覆盖率探针，打印每页引用
 | A2 | `dsh.client.inject` 声明 3 个从未 import 的宿主客户端包，图构建失败则入口永久不可见 | `package.json` 整体删除 `dsh.client.inject`；若宿主图里查不到本包（`client.composed=false`），单行回滚恢复该字段。当前与回滚两种路径都会在 `meta/runtime.json` 留痕 |
 | A3 | Web 外壳 401 鉴权，脚本化验证无门 | `connection.authenticatedUrl(origin)` 的地址随 panel 路由返回体（`webUrl` 字段）与 `/wiki status` 下发；同时新增自包含降级页 `/api/repowiki/app` 作为稳定验证靶点 |
 | A4 | 宿主 `clientModules` 服务完全没用上 | 同 A1；全部探测走 `ctx.get(name, false)`，任何异常都折进 `client.error` 字段，绝不影响插件加载 |
-| B1 | 两个 wiki_generate 并发会交错写页面与元数据 | `service.runs` 运行锁（键=`root|language`）：第二个并发调用显式失败，错误带 `runId`、统一错误码 `conflict`；`wiki_generate` / `/wiki generate` / 面板 generate 三条入口共用 `run()`，行为一致 |
+| B1 | 两个 wiki_generate 并发会交错写页面与元数据 | `service.runs` 运行锁（键=`root\|language`）：第二个并发调用显式失败，错误带 `runId`、统一错误码 `conflict`；`wiki_generate` / `/wiki generate` / 面板 generate 三条入口共用 `run()`，行为一致 |
 | B2 | 中断半写无法判定「上次运行是否完整」 | 每次运行写 `meta/run.json`：`running → done/failed` 状态流转（只覆盖写）；`/wiki status` 与面板展示「上次运行是否完整」 |
 | B3 | 失败路径只回 `{error}` 无错误码 | 新增 `src/errors.js` 统一错误体 `{code, message, hint}`；路由按语义回 400/404/409/500（并发冲突 → 409），工具、命令、降级页共用 |
 | C1 | 面板/检索每次重读全部分页文件 | `service.corpus()` 语料缓存：命中返回同一对象引用；写操作（generate/update/export/import）立即失效；缓存有效性绑定 `generatedAt + pages.length` 一致性校验 + TTL |
@@ -660,7 +660,7 @@ node test/probe-coverage.mjs .   # 可选：覆盖率探针，打印每页引用
 | --- | --- | --- | --- |
 | 1 | 点开侧栏后面板整体崩溃：`slot entry crashed in 'main': TypeError: Cannot read properties of null (reading 'code')` | `client.js` 里 `const errorView = h(...)` **急切构造**并读 `error.code`，而 `error` 只在 error 态非 null ⇒ 任何非错误状态渲染都抛异常（此前点击从未真正命中，缺陷一直潜伏） | 改为惰性 `const errorView = () => h(...)`，渲染处 `content = errorView()` |
 | 2 | 5 条 API 路由全部 **400 且 body 为空**（未注册路径却是 404，说明路由已匹配但 handler 没跑） | `requestBody:'none'` 让 `connection.bridge()` 走流式分支，对 GET 构造 `new Request(url,{method:'GET', body: Readable.toWeb(req)})` → WHATWG 规范抛 `TypeError: Request with GET/HEAD method cannot have body`，异常冒到 `host-webserver.handle().catch` → `res.writeHead(400); res.end()` | 只读路由统一改为 `requestBody:'buffered'`（常量 `READ_ONLY_BODY`）；并把每个 handler 包一层 `try/catch` 返回结构化 `{error:{code,message,hint}}`，杜绝空 400 |
-| 3 | `src/routes.js` 变成非法 UTF-8：`read` 报 `invalid UTF-8 text`、`node --check` 报 `SyntaxError` | 用 PowerShell `Get-Content -Raw | Set-Content` 批量替换时，4 个中文字符被写成 `U+FFFD` | 用 python 以 `encoding='utf-8', newline=''` 精确修复 4 处；**教训：不要用 pwsh `Set-Content`/`Out-File` 改写含中文的源码**，一律用 edit/write 工具或显式 UTF-8 的 python 写入 |
+| 3 | `src/routes.js` 变成非法 UTF-8：`read` 报 `invalid UTF-8 text`、`node --check` 报 `SyntaxError` | 用 PowerShell `Get-Content -Raw \| Set-Content` 批量替换时，4 个中文字符被写成 `U+FFFD` | 用 python 以 `encoding='utf-8', newline=''` 精确修复 4 处；**教训：不要用 pwsh `Set-Content`/`Out-File` 改写含中文的源码**，一律用 edit/write 工具或显式 UTF-8 的 python 写入 |
 | 4 | 面板 `root` 解析成 `C:\Users\26825\.dsh\profiles\desktop`，报 `exists:false`、「该仓库还没有生成 Wiki」 | Fetch 路由没有 agent/session，`resolveRoot()` 只能退回 `workingDirectory.defaultDirectory` | 新增 `resolveRequestRoot(hint)` 候选链（显式 `?root=` → 上次 root → 活跃会话 → 其他会话目录 → 工作区注册表 → 默认目录 → cwd，取第一个已含 wiki 的）；路由读 `?root=`，面板返回 `roots[]` 候选，浏览器半体加工作区下拉；新增第 28 项本地断言 |
 
 ---
@@ -864,3 +864,46 @@ node test/probe-coverage.mjs .   # 可选：覆盖率探针，打印每页引用
 ### 15.4 版本与后续
 
 版本 0.9.0 → **0.10.0**（`package.json` 与 `src/store.js` 同步）。本轮数据契约零变化；剩余问题与优先级见 [v0.10 评估](repowiki-improvement-review-v0.10.md)。
+
+---
+
+## 16. v0.11：P0/P1/P2 系统修复
+
+> 版本 0.10.0 → **0.11.0** ｜ 日期 2026-10-31 ｜ 完整验收见 [v0.11 修复与验收](repowiki-v0.11-closeout.md)
+
+### 16.1 范围
+
+本轮不再新增视图，集中处理上一轮评估中的 25 项问题：P0 4 项全部完成；P1 12 项完成 11 项（300 节点压测标注为未完成）；P2 完成 7 项、部分 1 项、未采用 1 项（可选 minify）。
+
+### 16.2 关键改动
+
+| 领域 | 改动 |
+| --- | --- |
+| 工程基线 | `git init` + `.gitignore` + 基线提交；后续每轮可回滚 |
+| 安全 | `trustedRoots()` 白名单、越界 `403 forbidden`；`/source` 路径约束；导出/导入时间戳备份 |
+| 内容 | 模块详情页（最多 8 个）；叙述层 v2（JSDoc/导入/被引用/路由/配置键）；`wiki_search("面板")` 0 → 2 命中 |
+| 新鲜度 | `/graph` 带 `signature/generatedAt/sourceHead`；客户端 30s TTL + 20s 轻量比对 + 过期徽标 |
+| 性能 | 面板 `sessionStorage` SWR；图谱 >120 节点视口裁剪；布局/走线 memo + rAF 合帧 |
+| 阅读 | 引用点击 → 源码抽屉（行号/高亮/复制/Esc）；代码块复制；sticky TOC；重复 H1 去除 |
+| 协作 | 导入 UI（确认 + 备份）；缺失语言横幅；图谱节点 → Wiki/卡片/源码联动 |
+| 无障碍 | `role=group`、模式 Tab `aria-label`、进度 `aria-live` |
+| 工程化 | `client/` 10 段源码 + `build-client.mjs`；`check-version.mjs`；`ui-e2e.mjs` 18 项 |
+
+### 16.3 验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm run check` | 构建 + 版本 + client-graph 12/12 + e2e 35/35 全绿 |
+| `test/ui-e2e.mjs` | 18/18（渲染、缓存、引用抽屉、拖拽、联动、导入、语言、窄屏、0 console error） |
+| 真实仓库生成 | 10 页 / 10 卡 / 155 引用 / 100% fresh |
+| 1080px 顶栏 | 单行 58px，图标 Tab，无溢出 |
+| 版本一致性 | 0.11.0 × 3 |
+
+截图：`docs/assets/repowiki-overview-v011.png`、`repowiki-source-v011.png`、`repowiki-graph-v011.png`、`repowiki-mobile-v011.png`、`repowiki-narrow-v011.png`。
+
+### 16.4 未完成
+
+- 300 节点性能压测（当前真实图仅 5 节点；裁剪逻辑已就位）。
+- 可选模型叙述层（保留 EvidencePack 为唯一事实源）。
+- 密度切换 / 力导向布局。
+- 可选 minify（与零构建安装冲突，收益低）。

@@ -318,6 +318,7 @@ export function buildPlan(scan = {}, index = {}, options = {}) {
     routes,
     configKeys,
     dataFiles,
+    fileImports: Array.isArray(index?.fileImports) ? index.fileImports : [],
   }
 
   // 1. Which catalogue entries apply at all?
@@ -343,6 +344,16 @@ export function buildPlan(scan = {}, index = {}, options = {}) {
     }
   })
 
+  // Module detail pages: the catalogue above describes the repository as a
+  // whole, which leaves a new or fast-moving module without a page of its own
+  // (and therefore without searchable text). The largest non-trivial modules
+  // get a dedicated page inside the remaining page budget, so features such as
+  // the Web panel and its routes are represented in the wiki instead of being
+  // folded into an unrelated "architecture" page.
+  const budget = Math.max(0, maxPages - documents.length)
+  const moduleDocs = buildModuleDocuments({ modules, symbols, fileSet, fileImports: context.fileImports, limit: Math.min(8, budget) })
+  documents.push(...moduleDocs)
+
   return {
     version: PLAN_VERSION,
     repowiki: {
@@ -355,6 +366,78 @@ export function buildPlan(scan = {}, index = {}, options = {}) {
       notes: buildCardNotes(),
     },
   }
+}
+
+/**
+ * Build one detail page per significant module, largest first.
+ *
+ * A module is "significant" when it has at least three source files and 120
+ * lines; generated/vendor/test directories are skipped because they do not
+ * describe the product. The id is stable (`module-<slug>`), so a regenerated
+ * plan keeps addressing the same page.
+ *
+ * @param {{ modules: object[], symbols: object[], fileSet: Set<string>, limit: number }} context
+ * @returns {object[]}
+ */
+function buildModuleDocuments({ modules, symbols, fileSet, fileImports = [], limit }) {
+  if (!limit || limit <= 0) return []
+  const usedIds = new Set()
+  // Rank a module's files by how much structure they carry, not by their
+  // alphabetical position: the entry/service/panel files of a module are the
+  // ones a reader (and the search index) needs most, and alphabetical order
+  // would otherwise bury them behind helpers such as `client-graph.js`.
+  const symbolCount = new Map()
+  for (const symbol of symbols) {
+    if (!symbol?.path) continue
+    symbolCount.set(symbol.path, (symbolCount.get(symbol.path) ?? 0) + 1)
+  }
+  const inbound = new Map()
+  for (const pair of fileImports) {
+    if (!pair?.to) continue
+    inbound.set(pair.to, (inbound.get(pair.to) ?? 0) + 1)
+  }
+  const priorityName = /(^|\/)(index|main|server|app|service|panel|panel-page|routes?|store|client|graph|scan|plan|render|search|tools)\.(js|mjs|cjs|ts|tsx|py|go|rs)$/
+  const fileScore = (file) => {
+    const base = file.split('/').pop() ?? file
+    const priority = priorityName.test(base) ? 40 : 0
+    return priority + (symbolCount.get(file) ?? 0) * 3 + (inbound.get(file) ?? 0) * 12
+  }
+  const candidates = [...modules]
+    .filter((module) => module.path && module.files.length >= 3 && module.size >= 120)
+    .filter((module) => !isGeneratedModule(module.path))
+    .sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.path < b.path ? -1 : 1))
+
+  const documents = []
+  for (const module of candidates) {
+    if (documents.length >= limit) break
+    const files = [...module.files]
+      .filter((file) => fileSet.has(file))
+      .sort((a, b) => fileScore(b) - fileScore(a) || (a < b ? -1 : 1))
+      .slice(0, 10)
+    if (files.length < 2) continue
+    const id = `module-${slugify(module.path.replace(/\//g, '-'))}`
+    if (!id || usedIds.has(id)) continue
+    usedIds.add(id)
+    const segments = module.path.split('/').filter(Boolean)
+    const label = segments.slice(-2).join('/') || module.path
+    documents.push({
+      id,
+      title: `模块：${label}`,
+      goal: `说明 ${module.path} 模块的职责、关键文件、对外接口与依赖关系。`,
+      parent: 'architecture',
+      hints: ['说明这个模块负责什么、边界在哪里', '列出关键文件与对外符号'],
+      sources: {
+        files: uniq(files),
+        symbols: selectSymbols('modules', files, symbols),
+      },
+    })
+  }
+  return documents
+}
+
+/** Directories that are generated, vendored or test-only. */
+function isGeneratedModule(path) {
+  return /(^|\/)(node_modules|vendor|dist|build|out|coverage|test|tests|__tests__|__mocks__|fixtures?|examples?)(\/|$)/i.test(path)
 }
 
 /** True when the conditional page has enough evidence to be generated. */
@@ -762,7 +845,10 @@ export function validatePlan(plan) {
  */
 export function pageDirectory(doc) {
   const id = typeof doc === 'string' ? doc : (doc?.id ?? '')
-  return PAGE_DIRECTORIES[id] ?? '00-overview'
+  if (PAGE_DIRECTORIES[id]) return PAGE_DIRECTORIES[id]
+  // Module detail pages live next to the module map they extend.
+  if (id.startsWith('module-')) return '10-architecture'
+  return '00-overview'
 }
 
 /**

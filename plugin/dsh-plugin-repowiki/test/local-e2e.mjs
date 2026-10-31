@@ -23,7 +23,7 @@ import assert from 'node:assert/strict'
 import { apply, RepoWikiService } from '../index.js'
 import { buildPagePayload, buildPanelPayload } from '../src/panel.js'
 import { parseMarkdownBlocks } from '../src/markdown.js'
-import { APP_ROUTE, PANEL_ROUTES, ABORT_ROUTE, EXPORT_ROUTE, PROGRESS_ROUTE, GRAPH_ROUTE, IMPACT_ROUTE } from '../src/routes.js'
+import { APP_ROUTE, PANEL_ROUTES, ABORT_ROUTE, EXPORT_ROUTE, IMPORT_ROUTE, PROGRESS_ROUTE, GRAPH_ROUTE, IMPACT_ROUTE, SOURCE_ROUTE } from '../src/routes.js'
 
 /* ------------------------------------------------------------------ *
  * A minimal implementation of the harness `fs` provider               *
@@ -562,7 +562,7 @@ check('every source file of a page is cited at least once', async ({ service, ro
 
 check('the panel routes are registered on the connection service', async ({ registry }) => {
   const byPath = new Map(registry.routes.map((route) => [route.path, route]))
-  assert.equal(byPath.size, 10, 'the panel registers 4 panel + app + progress + abort + export + graph + impact routes')
+  assert.equal(byPath.size, 12, 'the panel registers 4 panel + app + progress + abort + export + import + source + graph + impact routes')
   for (const path of Object.values(PANEL_ROUTES)) {
     assert.ok(byPath.has(path), `${path} must be registered`)
   }
@@ -570,6 +570,8 @@ check('the panel routes are registered on the connection service', async ({ regi
   assert.ok(byPath.has(PROGRESS_ROUTE), 'the live progress route must be registered')
   assert.ok(byPath.has(ABORT_ROUTE), 'the abort route must be registered')
   assert.ok(byPath.has(EXPORT_ROUTE), 'the export route must be registered')
+  assert.ok(byPath.has(IMPORT_ROUTE), 'the import route must be registered')
+  assert.ok(byPath.has(SOURCE_ROUTE), 'the source peek route must be registered')
   assert.ok(byPath.has(GRAPH_ROUTE), 'the knowledge graph route must be registered')
   assert.ok(byPath.has(IMPACT_ROUTE), 'the impact route must be registered')
   assert.deepEqual(byPath.get(PANEL_ROUTES.panel).methods, ['GET'])
@@ -804,6 +806,29 @@ check('a Web request resolves the workspace that already holds a wiki', async ({
   }
 })
 
+check('an explicit root outside the trust boundary is rejected', async ({ service, root }) => {
+  const outside = await mkdtemp(join(tmpdir(), 'repowiki-outside-'))
+  try {
+    await assert.rejects(
+      service.resolveRequestRoot(outside),
+      (error) => error?.code === 'forbidden',
+      'a directory outside every workspace/session must not become a wiki root',
+    )
+    assert.equal(await service.resolveRequestRoot(root), root, 'the trusted root still resolves')
+  } finally {
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+check('the source peek stays inside the repository and returns numbered lines', async ({ service, root }) => {
+  const snippet = await service.readSourceSnippet(root, 'src/server.js', { line: 3, context: 2 })
+  assert.equal(snippet.path, 'src/server.js')
+  assert.ok(snippet.lines.length >= 3, 'the peek returns the requested context')
+  assert.ok(snippet.lines.some((line) => line.highlighted), 'one line is marked as the citation anchor')
+  await assert.rejects(service.readSourceSnippet(root, '../outside.txt'), /相对路径|\.\./)
+  await assert.rejects(service.readSourceSnippet(root, 'src/does-not-exist.js'), /不存在/)
+})
+
 check('the knowledge-card library has section cards with parent links', async ({ service, root }) => {
   await service.generate({ root, mode: 'full', language: 'zh' })
   const meta = JSON.parse(await fsp.readFile(join(root, '.dsh', 'repowiki', 'meta', 'repowiki.json'), 'utf8'))
@@ -817,6 +842,9 @@ check('the knowledge-card library has section cards with parent links', async ({
   assert.ok(sectionCards.every((card) => card.parent?.id === 'repo-overview'), 'every section card names the parent card')
   assert.ok(sectionCards.every((card) => typeof card.summary === 'string' && card.summary.length > 0), 'section cards carry a summary for the list view')
   assert.ok(sectionCards.every((card) => typeof card.tag === 'string' && card.tag.length > 0), 'section cards carry their topic tag')
+  assert.ok(cards.some((card) => card.tag === '规约'), 'the library holds a repository spec card')
+  assert.ok(cards.some((card) => card.tag === '技术栈'), 'the library holds a stack card')
+  assert.ok(cards.every((card) => card.scope && typeof card.scope.kind === 'string'), 'every card declares its scope')
 
   // The parent card body lists its children as `card:` cross references and a
   // section card links back to the parent — both readable via wiki_read.
@@ -846,6 +874,35 @@ check('the knowledge-card library has section cards with parent links', async ({
   }
 })
 
+check('the narrative layer explains files from indexed facts, not templates only', async ({ service, root }) => {
+  const page = await service.read(root, 'architecture')
+  assert.ok(page.markdown.includes('## 设计意图与实现要点'), 'the page carries the narrative section')
+  assert.ok(page.markdown.includes('源码注释说明') || page.markdown.includes('直接依赖'), 'the narrative quotes indexed facts')
+  assert.ok(page.markdown.includes('## 实现细节'), 'the implementation section stays')
+})
+
+check('impact maps a changed line range to the symbols and pages it touches', async ({ service, root }) => {
+  const affected = await service.impact(root, ['src/server.js:6-9'])
+  assert.ok(affected.length > 0, 'a changed file still affects its pages')
+  const withSymbols = affected.find((entry) => (entry.changedSymbols ?? []).length > 0)
+  assert.ok(withSymbols, 'a line range inside a symbol reports that symbol')
+  assert.ok(withSymbols.changedSymbols.includes('createServer'), 'the reported symbol is the function at that line')
+})
+
+check('the graph signature changes when the source tree changes', async ({ service, root }) => {
+  const file = join(root, 'src', 'util', 'format.js')
+  const before = await service.graphSignature(root)
+  const original = await fsp.readFile(file, 'utf8')
+  try {
+    await fsp.writeFile(file, `${original}\n// freshness probe\n`, 'utf8')
+    const after = await service.graphSignature(root)
+    assert.ok(before, 'the signature is available before the change')
+    assert.notEqual(after, before, 'a source edit produces a new signature')
+  } finally {
+    await fsp.writeFile(file, original, 'utf8')
+  }
+})
+
 check('the knowledge graph answers modules, edges and impact', async ({ registry }) => {
   const byPath = new Map(registry.routes.map((route) => [route.path, route]))
 
@@ -853,6 +910,8 @@ check('the knowledge graph answers modules, edges and impact', async ({ registry
   assert.equal(graphResponse.status, 200)
   const graph = await graphResponse.json()
   assert.equal(graph.level, 'module')
+  assert.ok(typeof graph.signature === 'string' && graph.signature.length > 0, 'the graph carries the scan signature used for freshness')
+  assert.ok(graph.generatedAt, 'the graph reports when it was built')
   assert.ok(graph.nodes.length >= 1, 'the graph carries module nodes')
   assert.ok(graph.edges.every((edge) => edge.from !== edge.to), 'no self edges')
   const ids = new Set(graph.nodes.map((node) => node.id))

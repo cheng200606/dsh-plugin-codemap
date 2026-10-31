@@ -16,10 +16,10 @@
  * The pipeline is deterministic: no model call is required, so the plugin works
  * offline and always produces verifiable citations.
  */
-import { join } from 'node:path'
+import { isAbsolute, join, relative as relativePath, resolve as resolvePath } from 'node:path'
 import { createFsAdapter } from './fs-adapter.js'
 import { normalizeConfig } from './config.js'
-import { scanRepository, collectScanSignature } from './scan.js'
+import { isSecretPath, scanRepository, collectScanSignature } from './scan.js'
 import { buildModuleGraph, buildFileGraph, impactFrom } from './graph.js'
 import { buildIndex } from './indexer.js'
 import { buildPlan, parsePlanYaml, planToYaml, validatePlan, pageFileName } from './plan.js'
@@ -49,7 +49,7 @@ import {
   saveVersion,
   SCHEMA_VERSION,
 } from './store.js'
-import { hashText, nowIso, toPosix } from './util.js'
+import { hashText, nowIso, toPosix, uniq } from './util.js'
 
 const DEFAULT_LANGUAGE = 'zh'
 
@@ -199,12 +199,20 @@ export class RepoWikiService {
       if (!trimmed || candidates.includes(trimmed)) return
       candidates.push(trimmed)
     }
-    // An explicit hint wins whenever it names an existing directory: the user
-    // asked for that repository, even if it has no wiki yet. A typo (or a stale
-    // bookmark) falls through to the chain below instead of producing a root
-    // that cannot be written to.
+    // An explicit hint is accepted only when it names an existing directory
+    // *inside the trust boundary*: a registered workspace, a live session, the
+    // last root this plugin resolved, or the harness default directory. The
+    // panel is a browser surface without an agent, so an unchecked `?root=`
+    // would turn it into a read/write primitive for any directory on the
+    // machine. A typo falls through to the chain below; a real-but-untrusted
+    // directory is rejected explicitly instead of silently swapped for another
+    // repository, because silently showing a different repo is its own bug.
     if (await this.isDirectory(explicit)) {
-      this.lastRoot = explicit.trim()
+      const candidate = explicit.trim()
+      if (!this.isTrustedRoot(candidate)) {
+        throw trustError(candidate, this.trustedRoots())
+      }
+      this.lastRoot = candidate
       return this.lastRoot
     }
     push(this.lastRoot)
@@ -320,6 +328,181 @@ export class RepoWikiService {
     }
   }
 
+  /**
+   * Every directory a Web request may name explicitly.
+   *
+   * This is deliberately *not* "any existing directory": it is the set the
+   * harness itself already treats as user context (registered workspaces,
+   * live sessions, the last resolved root, the default directory and the
+   * process directory). Roots are returned in priority order.
+   *
+   * @returns {string[]}
+   */
+  trustedRoots() {
+    const roots = []
+    const push = (value) => {
+      if (typeof value !== 'string' || !value.trim()) return
+      const trimmed = value.trim()
+      if (!roots.includes(trimmed)) roots.push(trimmed)
+    }
+    push(this.lastRoot)
+    for (const root of this.sessionRoots()) push(root)
+    for (const root of this.workspaceRoots()) push(root)
+    try {
+      const workingDirectory = optionalService(this.ctx, 'workingDirectory')
+      push(workingDirectory?.defaultDirectory)
+    } catch {
+      // The service is optional.
+    }
+    push(process.cwd())
+    return roots
+  }
+
+  /**
+   * Whether a path is inside a trusted root.
+   *
+   * A sub-directory of a trusted workspace is accepted (a monorepo package is
+   * still part of the workspace); a sibling or an unrelated path is not. The
+   * comparison is case-insensitive on Windows, where `C:\Repo` and `c:\repo`
+   * name the same directory.
+   *
+   * @param {string} candidate
+   * @returns {boolean}
+   */
+  isTrustedRoot(candidate) {
+    if (typeof candidate !== 'string' || !candidate.trim()) return false
+    const target = comparablePath(candidate)
+    if (!target) return false
+    for (const root of this.trustedRoots()) {
+      const base = comparablePath(root)
+      if (!base) continue
+      if (target === base) return true
+      if (target.startsWith(base.endsWith('/') ? base : `${base}/`)) return true
+    }
+    return false
+  }
+
+  /**
+   * The languages that actually have generated pages on disk.
+   *
+   * The UI can switch to `en` even when only `zh` was ever generated; without
+   * this list the switch would show an empty wiki and look broken.
+   *
+   * @param {string} root
+   * @returns {Promise<string[]>}
+   */
+  async availableLanguages(root) {
+    const repository = root || this.resolveRoot()
+    try {
+      const contentDir = join(resolveOutputDir(repository, this.config.outputDir), 'content')
+      const entries = await this.fs.listDir(contentDir)
+      return entries
+        .filter((entry) => entry.type === 'directory')
+        .map((entry) => entry.name)
+        .sort()
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Read one source snippet for the citation peek.
+   *
+   * The request comes from the browser, so the path is untrusted input:
+   *   - it must be repository-relative (no absolute path, no `..` segment),
+   *   - the resolved path must stay inside the repository root,
+   *   - secret-looking files are refused,
+   *   - only text files up to `maxBytes` are read.
+   *
+   * @param {string} root
+   * @param {string} repoPath
+   * @param {{ line?: number, context?: number, maxBytes?: number }} [options]
+   * @returns {Promise<object>}
+   */
+  async readSourceSnippet(root, repoPath, options = {}) {
+    const repository = root || this.resolveRoot()
+    const raw = String(repoPath ?? '').trim()
+    if (!raw) throw argumentError('缺少 path 参数', '请提供仓库内的相对路径，例如 src/service.js。')
+    const normalized = toPosix(raw)
+    if (isAbsolute(raw) || /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('/')) {
+      throw argumentError('path 必须是仓库内的相对路径', '请去掉盘符或前导斜杠后重试。')
+    }
+    const segments = normalized.split('/')
+    if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) {
+      throw argumentError('path 不能包含 . 或 .. 段', '请使用规范化的仓库相对路径。')
+    }
+    if (isSecretPath(normalized)) {
+      throw argumentError('拒绝读取敏感文件', '该路径匹配密钥/凭据规则，插件不会通过 Web 面板读取它。')
+    }
+    const absolute = resolvePath(repository, ...segments)
+    if (!isInside(repository, absolute)) {
+      throw argumentError('path 超出仓库范围', '只允许读取当前仓库根目录内的文件。')
+    }
+    const info = await this.fs.stat(absolute)
+    if (!info || info.type !== 'file') {
+      throw notFoundError(`文件不存在：${normalized}`, '请确认该路径是否已被移动或删除。')
+    }
+    const maxBytes = Math.min(1_000_000, Math.max(1024, Number(options.maxBytes ?? 300_000) || 300_000))
+    if (Number(info.size ?? 0) > maxBytes) {
+      throw argumentError(`文件超过 ${maxBytes} 字节，已拒绝预览`, '请在编辑器中打开大文件。')
+    }
+    const text = await this.fs.readFile(absolute)
+    if (typeof text !== 'string') {
+      throw notFoundError(`无法读取文件：${normalized}`, '该文件可能不是 UTF-8 文本。')
+    }
+    const lines = text.split(/\r?\n/)
+    const totalLines = lines.length
+    const center = Math.max(1, Math.min(totalLines, Number(options.line ?? 1) || 1))
+    const context = Math.min(80, Math.max(2, Number(options.context ?? 14) || 14))
+    const startLine = Math.max(1, center - context)
+    const endLine = Math.min(totalLines, center + context)
+    return {
+      path: normalized,
+      startLine,
+      endLine,
+      totalLines,
+      line: center,
+      language: languageOfPath(normalized),
+      lines: lines.slice(startLine - 1, endLine).map((content, offset) => ({
+        number: startLine + offset,
+        content,
+        highlighted: startLine + offset === center,
+      })),
+    }
+  }
+
+  /**
+   * Copy a directory tree to a timestamped sibling backup.
+   *
+   * Used before export/import overwrite a directory a human may have edited.
+   * Old backups are pruned to the newest three so the repository does not grow
+   * without bound.
+   *
+   * @param {string} from
+   * @param {string} to
+   * @param {string} workspaceRoot
+   * @returns {Promise<{ path: string, files: number }|null>}
+   */
+  async backupTree(from, to, workspaceRoot) {
+    const info = await this.fs.stat(from)
+    if (!info || info.type !== 'directory') return null
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+    const destination = `${to}.bak-${stamp}`
+    const files = await this.copyTree(from, destination, workspaceRoot)
+    return { path: destination, files: files.length }
+  }
+
+  /**
+   * Back up the wiki output directory of one repository.
+   *
+   * @param {string} root
+   * @returns {Promise<{ path: string, files: number }|null>}
+   */
+  async backupOutput(root) {
+    const base = resolveOutputDir(root, this.config.outputDir)
+    return this.backupTree(base, base, root)
+  }
+
   /* ---------------------------------------------------------------- *
    * Status
    * ---------------------------------------------------------------- */
@@ -429,7 +612,7 @@ export class RepoWikiService {
     const ttl = Number(this.config.cacheTtlMs ?? 5000)
     const cached = signature ? this.profiles.get(root) : null
     if (cached && cached.signature === signature && Date.now() - cached.at <= ttl) {
-      return { scan: cached.scan, index: cached.index }
+      return { scan: cached.scan, index: cached.index, signature }
     }
     const scan = await scanRepository(this.fs, root, options)
     const index = await buildIndex(this.fs, scan, {
@@ -437,7 +620,29 @@ export class RepoWikiService {
       maxConcurrentReads: this.config.maxConcurrentReads,
     })
     if (signature) this.profiles.set(root, { signature, scan, index, at: Date.now() })
-    return { scan, index }
+    return { scan, index, signature }
+  }
+
+  /**
+   * The cheap change fingerprint of a repository, without a scan or index.
+   *
+   * The graph badge uses it to answer "is what I am looking at still current?"
+   * in milliseconds instead of rebuilding the whole graph.
+   *
+   * @param {string} root
+   * @returns {Promise<string|null>}
+   */
+  async graphSignature(root) {
+    const repository = root || this.resolveRoot()
+    try {
+      return await collectScanSignature(this.fs, repository, {
+        maxFiles: this.config.maxFiles,
+        maxFileBytes: this.config.maxFileBytes,
+        outputDir: this.config.outputDir,
+      })
+    } catch {
+      return null
+    }
   }
 
   /**
@@ -519,6 +724,35 @@ export class RepoWikiService {
       document.sources = {
         files: ownFiles.length ? ownFiles : (fallback?.sources?.files ?? []),
         symbols: ownSymbols.length ? ownSymbols : (fallback?.sources?.symbols ?? []),
+      }
+    }
+
+    // A stored plan predates the module detail pages. Merge the new module
+    // documents into it instead of forcing the user to delete their hand-edited
+    // YAML: existing pages (and their wording) stay untouched, only the gaps
+    // are filled, up to the configured page budget.
+    if (source === 'file') {
+      const documents = plan.repowiki?.documents ?? []
+      // Auto-generated module pages carry a `模块：` title; refresh their
+      // wording from the derived plan (the id is stable), while a title the
+      // user renamed is left alone.
+      for (const document of documents) {
+        if (!String(document.id).startsWith('module-')) continue
+        if (!/^模块：/.test(String(document.title ?? ''))) continue
+        const fallback = derivedById.get(document.id)
+        if (!fallback) continue
+        document.title = fallback.title
+        document.goal = fallback.goal
+        document.hints = fallback.hints
+      }
+      const known = new Set(documents.map((document) => document.id))
+      const budget = Math.max(0, Number(this.config.maxPages ?? 24) - documents.length)
+      const additions = (derived?.repowiki?.documents ?? [])
+        .filter((document) => String(document.id).startsWith('module-') && !known.has(document.id))
+        .slice(0, budget)
+      for (const document of additions) {
+        document.path = document.path || pageFileName(document)
+        documents.push(document)
       }
     }
 
@@ -904,7 +1138,7 @@ export class RepoWikiService {
     // Knowledge cards: one parent card summarising the repository plus one
     // card per wiki section, mirroring the reference product's card library.
     this.bumpProgress(root, language, { phase: 'cards', current: null })
-    const cardSet = this.buildKnowledgeCards(plan, scan, written)
+    const cardSet = this.buildKnowledgeCards(plan, scan, written, index)
     for (const card of cardSet) {
       const cardMarkdown = renderCard(card, { generatedAt })
       const savedCard = await saveCardFile(this.fs, {
@@ -922,6 +1156,9 @@ export class RepoWikiService {
         tag: card.tag ?? card.tags?.[0] ?? '',
         summary: card.summary ?? '',
         parent: card.parent ?? null,
+        scope: card.scope ?? null,
+        confidence: card.confidence ?? 'medium',
+        sources: card.sources ?? [],
       })
     }
 
@@ -1039,14 +1276,22 @@ export class RepoWikiService {
    */
   async buildGraph(root, options = {}) {
     const repository = root || this.resolveRoot()
-    const { scan, index } = await this.buildRepositoryProfile(repository, options.signal)
+    const { scan, index, signature } = await this.buildRepositoryProfile(repository, options.signal)
+    const git = await this.readGitInfo(repository)
+    const meta = {
+      root: repository,
+      signature: signature ?? null,
+      generatedAt: nowIso(),
+      sourceHead: git?.head ?? null,
+      sourceBranch: git?.branch ?? null,
+    }
     if (options.level === 'file') {
-      return buildFileGraph(index, options.module ?? '')
+      return { level: 'file', ...meta, ...buildFileGraph(index, options.module ?? '') }
     }
     const graph = buildModuleGraph(scan, index, { limit: options.limit })
     return {
       level: 'module',
-      root: repository,
+      ...meta,
       ...graph,
     }
   }
@@ -1178,7 +1423,7 @@ export class RepoWikiService {
    * @param {Array<{id,title,goal,path}>} pages - the written pages.
    * @returns {Array<object>}
    */
-  buildKnowledgeCards(plan, scan, pages) {
+  buildKnowledgeCards(plan, scan, pages, index = {}) {
     const documents = plan?.repowiki?.documents ?? []
     const goalById = new Map(documents.map((document) => [document.id, document.goal ?? '']))
     const languages = Object.entries(scan?.languages ?? {})
@@ -1189,6 +1434,7 @@ export class RepoWikiService {
         title: page.title,
         path: this.contentRelative(page.path, this.config.defaultLanguage),
       }))
+    const pageById = new Map(pages.map((page) => [page.id, page]))
     const parent = {
       id: KNOWLEDGE_CARD_ID,
       title: '仓库速览',
@@ -1199,6 +1445,9 @@ export class RepoWikiService {
       ].join(''),
       links: pageLinks(pages.slice(0, 8)),
       tags: ['repo', 'overview', plan?.repowiki?.template ?? 'architecture'],
+      scope: { kind: 'repository', path: '.' },
+      confidence: 'medium',
+      sources: (scan?.files ?? []).slice(0, 5).map((file) => (typeof file === 'string' ? file : file.path)).filter(Boolean),
     }
 
     // Group the written pages by their wiki section (the directory under
@@ -1230,10 +1479,92 @@ export class RepoWikiService {
           tags: [label, '卡片'],
           parent: { id: parent.id, title: parent.title },
           children: [],
+          scope: { kind: 'section', path: section },
+          confidence: 'medium',
+          sources: uniq(list.flatMap((page) => page.sources?.files ?? [])).slice(0, 8),
         }
       })
-    parent.children = sectionCards.map((card) => ({ id: card.id, title: card.title }))
-    return [parent, ...sectionCards]
+
+    // Architecture cards: one per module page, with the module's boundary,
+    // symbols and source files. This is the card shape an agent can consume
+    // without reading the full page.
+    const moduleCards = documents
+      .filter((document) => String(document.id).startsWith('module-'))
+      .map((document) => {
+        const page = pageById.get(document.id)
+        if (!page) return null
+        const files = document.sources?.files ?? []
+        const dir = files.length > 0 ? toPosix(files[0]).split('/').slice(0, -1).join('/') : ''
+        const symbols = document.sources?.symbols ?? []
+        return {
+          id: `card-${document.id}`,
+          title: `${document.title} · 架构卡`,
+          tag: '架构',
+          summary: [
+            document.goal,
+            `关键文件 ${files.length} 个`,
+            symbols.length > 0 ? `核心符号 ${symbols.slice(0, 6).join('、')}` : '',
+            '改动该模块前先核对这张卡的边界与依赖。',
+          ].filter(Boolean).join('；'),
+          links: pageLinks([page]),
+          tags: ['架构', '模块'],
+          parent: { id: parent.id, title: parent.title },
+          children: [],
+          scope: { kind: 'module', path: dir || '.' },
+          confidence: page.confidence ?? 'medium',
+          sources: files.slice(0, 8),
+        }
+      })
+      .filter(Boolean)
+
+    // Spec card: the repository-wide conventions a contributor must follow.
+    const specCard = {
+      id: 'card-spec',
+      title: '仓库规约',
+      tag: '规约',
+      summary: [
+        `生成器为 ${GENERATOR_NAME} ${GENERATOR_VERSION}，模板「${plan?.repowiki?.template ?? 'architecture'}」。`,
+        `所有页面必须带 path:line 引用，引用校验通过才标记 fresh。`,
+        `规划上限 ${documents.length} 页；语言分布：${languages.join('、') || '未知'}。`,
+      ].join(''),
+      links: [],
+      tags: ['规约', 'Spec'],
+      parent: { id: parent.id, title: parent.title },
+      children: [],
+      scope: { kind: 'spec', path: '.' },
+      confidence: 'high',
+      sources: ['wiki_plan.yaml'],
+    }
+
+    // Stack card: runtime dependencies and entry/build files.
+    const dependencies = (index?.dependencies ?? [])
+      .filter((dependency) => dependency?.scope !== 'dev')
+      .slice(0, 10)
+      .map((dependency) => `${dependency.name}${dependency.version ? `@${dependency.version}` : ''}`)
+    const stackCard = {
+      id: 'card-stack',
+      title: '技术栈与入口',
+      tag: '技术栈',
+      summary: [
+        languages.length > 0 ? `主要语言：${languages.join('、')}。` : '',
+        dependencies.length > 0 ? `运行时依赖：${dependencies.join('、')}。` : '未发现显式运行时依赖。',
+        (scan?.entryPoints ?? []).length > 0 ? `入口文件：${(scan.entryPoints ?? []).slice(0, 5).join('、')}。` : '',
+      ].filter(Boolean).join(''),
+      links: [],
+      tags: ['技术栈', 'Stack'],
+      parent: { id: parent.id, title: parent.title },
+      children: [],
+      scope: { kind: 'stack', path: '.' },
+      confidence: 'high',
+      sources: uniq([
+        ...(scan?.buildFiles ?? []).slice(0, 4),
+        ...(scan?.entryPoints ?? []).slice(0, 4),
+      ]),
+    }
+
+    const children = [...moduleCards, ...sectionCards]
+    parent.children = children.map((card) => ({ id: card.id, title: card.title }))
+    return [parent, ...children, specCard, stackCard]
   }
 
   /**
@@ -1256,7 +1587,15 @@ export class RepoWikiService {
    * rest kept as-is (`10-architecture` → `architecture`).
    */
   sectionLabel(section) {
-    return String(section ?? '').replace(/^\d+-/, '') || String(section ?? 'overview')
+    const id = String(section ?? '')
+    const known = {
+      '00-overview': '概览',
+      '10-architecture': '架构',
+      '20-operations': '运维',
+      '20-flows': '流程',
+      '30-notes': '备注',
+    }
+    return known[id] ?? (id.replace(/^\d+-/, '') || 'overview')
   }
 
   /* ---------------------------------------------------------------- *
@@ -1470,24 +1809,69 @@ export class RepoWikiService {
    */
   async impact(root, changes) {
     const repository = root || this.resolveRoot()
-    const files = Array.isArray(changes)
-      ? changes.map((entry) => toPosix(String(entry)))
+    const requested = Array.isArray(changes)
+      ? changes
       : Array.isArray(changes?.files)
-        ? changes.files.map((entry) => toPosix(String(entry)))
+        ? changes.files
         : []
+    const explicitSymbols = new Set(
+      (Array.isArray(changes?.symbols) ? changes.symbols : [])
+        .map((symbol) => String(symbol ?? '').trim())
+        .filter(Boolean),
+    )
+    const changed = requested.map((entry) => parseChange(entry)).filter(Boolean)
     const meta = await loadMetadata(this.fs, repository, this.config.outputDir)
     if (!meta) return []
+
+    // A `path:line` change is more precise than a whole-file change: resolve
+    // the line range against the index and match the symbols the page declares.
+    const changedSymbols = new Set(explicitSymbols)
+    const symbolHits = []
+    if (changed.some((entry) => entry.startLine != null)) {
+      try {
+        const { index } = await this.buildRepositoryProfile(repository)
+        const byPath = new Map()
+        for (const symbol of index?.symbols ?? []) {
+          if (!byPath.has(symbol.path)) byPath.set(symbol.path, [])
+          byPath.get(symbol.path).push(symbol)
+        }
+        for (const entry of changed) {
+          if (entry.startLine == null) continue
+          for (const symbol of byPath.get(entry.path) ?? []) {
+            const start = Number(symbol.line ?? 0)
+            const end = Number(symbol.endLine ?? start)
+            const overlaps = entry.startLine <= end && (entry.endLine ?? entry.startLine) >= start
+            if (!overlaps) continue
+            changedSymbols.add(symbol.name)
+            symbolHits.push({ name: symbol.name, path: entry.path, startLine: start, endLine: end })
+          }
+        }
+      } catch {
+        // Without an index the file-level result below is still correct.
+      }
+    }
+
     const affected = []
     for (const page of meta.pages ?? []) {
       const sources = page.sources?.files ?? []
-      const hit = files.filter((changed) => sources.some((source) => source === changed || changed.startsWith(`${source}/`) || source.startsWith(`${changed}/`)))
-      if (hit.length === 0) continue
+      const hit = changed
+        .map((entry) => entry.path)
+        .filter((path) => sources.some((source) => source === path || path.startsWith(`${source}/`) || source.startsWith(`${path}/`)))
+      const pageSymbols = page.sources?.symbols ?? []
+      const matchedSymbols = pageSymbols.filter((symbol) => changedSymbols.has(symbol))
+      if (hit.length === 0 && matchedSymbols.length === 0) continue
       affected.push({
         id: page.id,
         title: page.title,
         path: page.path,
         status: page.status,
-        changedFiles: hit,
+        changedFiles: uniq(hit),
+        changedSymbols: uniq(matchedSymbols),
+        // Why the page is affected: a whole file, a line range, or a symbol.
+        reasons: [
+          hit.length > 0 ? 'file' : '',
+          symbolHits.some((symbol) => matchedSymbols.includes(symbol.name)) ? 'symbol' : '',
+        ].filter(Boolean),
       })
     }
     return affected
@@ -1511,11 +1895,14 @@ export class RepoWikiService {
     const base = resolveOutputDir(repository, this.config.outputDir)
     if (target === 'qoder') {
       const destination = join(repository, '.qoder', 'repowiki')
+      // A previous export may contain hand-edited pages; keep a timestamped
+      // copy before overwriting it.
+      const backup = await this.backupTree(destination, destination, repository)
       const files = await this.copyTree(base, destination, repository)
       // A write happened below the repository: drop the cached corpus so the
       // next search or panel payload reflects what is on disk now.
       this.invalidateCorpus(repository)
-      return { target, path: destination, files }
+      return { target, path: destination, files, backup }
     }
     const meta = await loadMetadata(this.fs, repository, this.config.outputDir)
     const pages = []
@@ -1652,4 +2039,100 @@ function parseFrontmatterSafe(markdown) {
   } catch {
     return { data: {}, body: markdown }
   }
+}
+
+/**
+ * A path form safe to compare: absolute, POSIX separators, lower case on
+ * Windows, no trailing slash.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function comparablePath(value) {
+  try {
+    const absolute = resolvePath(String(value ?? ''))
+    const normalized = toPosix(absolute).replace(/\/+$/, '')
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * True when `child` is inside `parent` (or is the same path).
+ *
+ * @param {string} parent
+ * @param {string} child
+ * @returns {boolean}
+ */
+function isInside(parent, child) {
+  const rel = relativePath(resolvePath(parent), resolvePath(child))
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+}
+
+/** The error raised when a Web request names an untrusted root. */
+function trustError(path, roots) {
+  const allowed = roots.slice(0, 4).join('、') || '（无）'
+  const error = new Error(`仓库根目录不在信任范围内：${path}`)
+  error.code = 'forbidden'
+  error.hint = `面板只能访问已注册的工作区。请先把该目录添加为工作区，或在其中执行 /wiki。当前可用：${allowed}`
+  return error
+}
+
+/** The error raised for an invalid route argument. */
+function argumentError(message, hint) {
+  const error = new Error(message)
+  error.code = 'invalid_argument'
+  error.hint = hint
+  return error
+}
+
+/** The error raised when a route target does not exist. */
+function notFoundError(message, hint) {
+  const error = new Error(message)
+  error.code = 'not_found'
+  error.hint = hint
+  return error
+}
+
+/** A coarse language label for a path (used to colour a code peek). */
+function languageOfPath(path) {
+  const lower = String(path ?? '').toLowerCase()
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript'
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript'
+  if (lower.endsWith('.json')) return 'json'
+  if (lower.endsWith('.md')) return 'markdown'
+  if (lower.endsWith('.py')) return 'python'
+  if (lower.endsWith('.go')) return 'go'
+  if (lower.endsWith('.rs')) return 'rust'
+  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return 'yaml'
+  return 'text'
+}
+
+/**
+ * Parse one change entry.
+ *
+ * Accepted forms: `src/a.js`, `src/a.js:42`, `src/a.js:40-55`, or
+ * `{ path, startLine, endLine }`. The line suffix lets a caller say "this
+ * function changed" instead of "this whole file changed", which is what makes
+ * the symbol-level impact possible.
+ *
+ * @param {string|object} entry
+ * @returns {{ path: string, startLine: number|null, endLine: number|null }|null}
+ */
+function parseChange(entry) {
+  if (entry && typeof entry === 'object') {
+    const path = toPosix(String(entry.path ?? entry.file ?? '')).trim()
+    if (!path) return null
+    const start = Number(entry.startLine ?? entry.line ?? 0) || null
+    const end = Number(entry.endLine ?? entry.end ?? 0) || start
+    return { path, startLine: start, endLine: end }
+  }
+  const raw = toPosix(String(entry ?? '')).trim()
+  if (!raw) return null
+  const match = /^(.*):(\d+)(?:-(\d+))?$/.exec(raw)
+  if (!match) return { path: raw, startLine: null, endLine: null }
+  const start = Number(match[2])
+  const end = Number(match[3] ?? match[2])
+  return { path: match[1], startLine: start, endLine: Math.max(start, end) }
 }

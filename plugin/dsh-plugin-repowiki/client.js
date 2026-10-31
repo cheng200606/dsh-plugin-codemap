@@ -1,4 +1,12 @@
 /**
+ * GENERATED FILE — edit `client/*.js` and run `node scripts/build-client.mjs`.
+ * Bundle: 10 parts, version 0.11.0.
+ */
+/* ---- 00-preamble.js ----
+ * Module loader, factory header and shared constants.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
+/**
  * Browser half of the Repo Wiki plugin.
  *
  * The Host owns the wiki (scan, index, generate, verify). This file only gives
@@ -35,6 +43,18 @@ window.__ModuleLoader__.load({
     const SEARCH_DEBOUNCE_MS = 200
     /** Keywords offered when a search returns nothing. */
     const SEARCH_SUGGESTIONS = ['architecture', 'module', 'flow', 'config', 'overview', 'build']
+    /** The client bundle version; compared with the host generator version. */
+    const CLIENT_VERSION = '0.11.0'
+    /** How long a graph payload may be reused before a silent refresh. */
+    const GRAPH_TTL_MS = 30_000
+    /** How often the open graph checks the source signature. */
+    const GRAPH_CHECK_MS = 20_000
+    /** sessionStorage prefix of the panel payload cache. */
+    const PANEL_CACHE_PREFIX = 'repowiki:panel:'
+    /** localStorage key of the recently opened pages. */
+    const RECENT_KEY = 'repowiki:recent'
+    /** Node count above which off-screen nodes are culled from the SVG. */
+    const GRAPH_CULL_THRESHOLD = 120
     /** The locale key of every panel state (the dictionaries use flat keys). */
     const STATE_KEYS = {
       idle: 'stateIdle',
@@ -44,6 +64,10 @@ window.__ModuleLoader__.load({
       error: 'stateError',
     }
 
+/* ---- 10-locale.js ----
+ * Chinese/English dictionaries and the translator.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     const zh = {
       panel: '仓库 Wiki',
       loading: '正在加载仓库 Wiki…',
@@ -130,6 +154,40 @@ window.__ModuleLoader__.load({
       graphLegendImpact: '影响范围',
       graphNodeCount: '节点',
       graphEdgeCount: '关系',
+      graphStale: '数据可能已过期',
+      graphStaleHint: '源码已变化，点击刷新重建图谱',
+      graphFreshAt: '更新于',
+      openSource: '打开源码',
+      sourceTitle: '源码片段',
+      sourceCopy: '复制引用',
+      sourceError: '无法读取源码',
+      sourceClose: '关闭',
+      importMenu: '更多',
+      importQoder: '从 .qoder/repowiki 导入',
+      importDsh: '导入 DSH 导出包',
+      importTitle: '确认导入',
+      importHint: '导入会覆盖当前 Wiki 页面；系统会先自动备份到带时间戳的目录。',
+      importConfirm: '导入并备份',
+      importDone: '导入完成',
+      importFailed: '导入失败',
+      langMissing: '该语言的 Wiki 尚未生成',
+      langMissingHint: '当前只有',
+      generateLang: '生成该语言版本',
+      restartHint: '界面版本与宿主不一致，请重载面板',
+      filterAll: '全部',
+      filterFresh: '新鲜',
+      filterStale: '过期',
+      regenerateAll: '重新生成全部',
+      recent: '最近访问',
+      codeCopy: '复制代码',
+      codeCopied: '已复制',
+      close: '关闭',
+      wikiLink: '打开相关 Wiki',
+      cardLink: '查看知识卡',
+      sidebarOpen: '显示目录',
+      sidebarClose: '隐藏目录',
+      densityComfort: '舒适',
+      densityCompact: '紧凑',
       impactUpstream: '上游',
       impactDownstream: '下游',
       graphLocate: '定位模块',
@@ -253,6 +311,40 @@ window.__ModuleLoader__.load({
       graphLegendImpact: 'Impact',
       graphNodeCount: 'nodes',
       graphEdgeCount: 'links',
+      graphStale: 'Data may be outdated',
+      graphStaleHint: 'The source changed; refresh to rebuild the graph',
+      graphFreshAt: 'Updated',
+      openSource: 'Open source',
+      sourceTitle: 'Source peek',
+      sourceCopy: 'Copy citation',
+      sourceError: 'Could not read the source',
+      sourceClose: 'Close',
+      importMenu: 'More',
+      importQoder: 'Import from .qoder/repowiki',
+      importDsh: 'Import a DSH bundle',
+      importTitle: 'Confirm import',
+      importHint: 'Importing overwrites the current wiki; a timestamped backup is written first.',
+      importConfirm: 'Import with backup',
+      importDone: 'Import finished',
+      importFailed: 'Import failed',
+      langMissing: 'This language has no wiki yet',
+      langMissingHint: 'Available:',
+      generateLang: 'Generate this language',
+      restartHint: 'The panel bundle is older than the host; reload the panel',
+      filterAll: 'All',
+      filterFresh: 'Fresh',
+      filterStale: 'Stale',
+      regenerateAll: 'Regenerate everything',
+      recent: 'Recent',
+      codeCopy: 'Copy code',
+      codeCopied: 'Copied',
+      close: 'Close',
+      wikiLink: 'Open the related wiki page',
+      cardLink: 'Open the knowledge card',
+      sidebarOpen: 'Show the page tree',
+      sidebarClose: 'Hide the page tree',
+      densityComfort: 'Comfortable',
+      densityCompact: 'Compact',
       impactUpstream: 'upstream',
       impactDownstream: 'downstream',
       graphLocate: 'Find a module',
@@ -291,6 +383,11 @@ window.__ModuleLoader__.load({
     }
 
     /** Read a theme token, falling back to a neutral value. */
+
+/* ---- 20-helpers.js ----
+ * Theme tokens, citation parsing, panel cache and recent pages.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     function token(name, fallback) {
       try {
         const value = getComputedStyle(document.documentElement).getPropertyValue(name)
@@ -333,6 +430,97 @@ window.__ModuleLoader__.load({
       return normalized.split(/[\\/]/).pop() || normalized
     }
 
+    /** Parse `path:12` / `path:12-18` into a path and a line. */
+    function parseCitation(value) {
+      const text = String(value ?? '').trim()
+      const match = /^(.*):(\d+)(?:-(\d+))?$/.exec(text)
+      if (!match) return null
+      const line = Number(match[2]) || 1
+      const end = Number(match[3] ?? match[2]) || line
+      return { path: match[1], line, endLine: Math.max(line, end) }
+    }
+
+    /** Read the recently opened pages (localStorage; never throws). */
+    function readRecentPages() {
+      try {
+        const raw = localStorage.getItem(RECENT_KEY)
+        const list = raw ? JSON.parse(raw) : []
+        return Array.isArray(list) ? list.filter((entry) => entry && entry.id).slice(0, 6) : []
+      } catch {
+        return []
+      }
+    }
+
+    /** Remember one page at the head of the recent list. */
+    function rememberPage(entry) {
+      if (!entry?.id) return []
+      try {
+        const next = [entry, ...readRecentPages().filter((item) => item.id !== entry.id)].slice(0, 6)
+        localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+        return next
+      } catch {
+        return readRecentPages()
+      }
+    }
+
+    /** A stable sessionStorage key for one panel payload. */
+    function panelCacheKey(root, language) {
+      return `${PANEL_CACHE_PREFIX}${root || 'auto'}:${language || 'zh'}`
+    }
+
+    /** Read a cached panel payload; stale entries are still usable. */
+    function readPanelCache(key) {
+      try {
+        const raw = sessionStorage.getItem(key)
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        return parsed && parsed.data ? parsed : null
+      } catch {
+        return null
+      }
+    }
+
+    /** Write a panel payload into the current tab's cache. */
+    function writePanelCache(key, data) {
+      try {
+        sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), data }))
+      } catch {
+        // A full/denied storage must not break the panel.
+      }
+    }
+
+    /** Drop every cached panel payload (after a write that changed the wiki). */
+    function clearPanelCache() {
+      try {
+        for (let index = sessionStorage.length - 1; index >= 0; index--) {
+          const key = sessionStorage.key(index)
+          if (key && key.startsWith(PANEL_CACHE_PREFIX)) sessionStorage.removeItem(key)
+        }
+      } catch {
+        // Ignore a storage that refuses enumeration.
+      }
+    }
+
+    /** Split text into matched/unmatched runs so a search term can be marked. */
+    function highlightParts(text, query) {
+      const source = String(text ?? '')
+      const needle = String(query ?? '').trim()
+      if (!needle) return [{ text: source, match: false }]
+      const parts = []
+      const lower = source.toLowerCase()
+      const target = needle.toLowerCase()
+      let from = 0
+      while (from <= source.length) {
+        const at = lower.indexOf(target, from)
+        if (at < 0) break
+        if (at > from) parts.push({ text: source.slice(from, at), match: false })
+        parts.push({ text: source.slice(at, at + needle.length), match: true })
+        from = at + needle.length
+      }
+      if (from < source.length) parts.push({ text: source.slice(from), match: false })
+      return parts.length > 0 ? parts : [{ text: source, match: false }]
+    }
+
     /**
      * A friendly section heading. The host payload carries ids such as
      * `10-architecture`; showing the raw id is technically correct but reads
@@ -354,6 +542,10 @@ window.__ModuleLoader__.load({
       return label || section?.id || t('overview')
     }
 
+/* ---- 30-styles.js ----
+ * The stylesheet injected once into the panel.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     /** One-off keyframes (shimmer, fade) the inline styles cannot express. */
     function injectPanelStyles() {
       try {
@@ -407,6 +599,7 @@ window.__ModuleLoader__.load({
   background: color-mix(in srgb, var(--rw-surface) 52%, transparent);
   backdrop-filter: blur(14px) saturate(130%);
   flex-wrap: wrap;
+  flex: 0 0 auto;
 }
 .repowiki-brand {
   display: inline-flex;
@@ -593,7 +786,7 @@ window.__ModuleLoader__.load({
 .repowiki-breadcrumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; font-size: 11px; color: var(--rw-fg-3); }
 .repowiki-breadcrumb button { padding: 0; border: 0; background: transparent; color: var(--rw-accent); font-size: 11px; cursor: pointer; }
 .repowiki-breadcrumb button:hover { text-decoration: underline; }
-.repowiki-toc { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 20px; padding: 9px 12px; border: 1px solid var(--rw-line); border-radius: 11px; background: color-mix(in srgb, var(--rw-surface) 66%, transparent); }
+.repowiki-toc { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 20px; padding: 9px 12px; border: 1px solid var(--rw-line); border-radius: 11px; background: color-mix(in srgb, var(--rw-surface) 92%, #808080 8%); backdrop-filter: blur(12px); box-shadow: 0 6px 18px rgba(0,0,0,.06); }
 .repowiki-toc button { padding: 1px 5px; border: 0; border-radius: 5px; background: transparent; color: var(--rw-fg-2); font-size: 11px; cursor: pointer; }
 .repowiki-toc button:hover { color: var(--rw-fg); background: var(--rw-surface-2); }
 
@@ -715,10 +908,46 @@ window.__ModuleLoader__.load({
 .repowiki-help-close { padding: 0; border: 0; background: transparent; color: var(--rw-fg-3); font-size: 13px; cursor: pointer; }
 .repowiki-help-close:hover { color: var(--rw-fg); }
 
+.repowiki-copy { height: 20px; padding: 0 7px; border: 1px solid var(--rw-line); border-radius: 5px; background: transparent; color: var(--rw-fg-3); font-size: 10px; cursor: pointer; }
+.repowiki-copy:hover { color: var(--rw-fg); background: var(--rw-surface); }
+
+.repowiki-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 22px 0; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--rw-accent) 34%, var(--rw-line)); border-radius: 11px; background: color-mix(in srgb, var(--rw-accent) 8%, transparent); color: var(--rw-fg-2); font-size: 11.5px; line-height: 1.55; }
+.repowiki-banner.is-warn { border-color: color-mix(in srgb, #e0a34a 45%, var(--rw-line)); background: color-mix(in srgb, #e0a34a 10%, transparent); }
+.repowiki-banner .repowiki-btn { height: 25px; margin-left: auto; }
+
+.repowiki-badge-stale { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px; border: 1px solid color-mix(in srgb, #e0a34a 48%, var(--rw-line)); border-radius: 999px; background: color-mix(in srgb, #e0a34a 10%, transparent); color: #d99a3c; font-size: 10.5px; cursor: pointer; }
+
+.repowiki-modal-mask { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 22px; background: rgba(0,0,0,.28); backdrop-filter: blur(2px); }
+.repowiki-modal { width: min(430px, 100%); padding: 18px 18px 15px; border: 1px solid var(--rw-line); border-radius: 16px; background: var(--rw-surface); background-color: color-mix(in srgb, var(--rw-surface) 96%, #808080 4%); box-shadow: var(--rw-shadow); }
+.repowiki-modal h3 { margin: 0 0 8px; font-size: 14px; color: var(--rw-fg); }
+.repowiki-modal p { margin: 0 0 14px; color: var(--rw-fg-2); font-size: 11.5px; line-height: 1.65; }
+.repowiki-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.repowiki-source { position: absolute; z-index: 30; top: 0; right: 0; bottom: 0; width: min(560px, 92%); display: flex; flex-direction: column; border-left: 1px solid var(--rw-line); background: color-mix(in srgb, var(--rw-surface) 94%, #808080 6%); box-shadow: -18px 0 42px rgba(0,0,0,.18); animation: repowiki-slide-in .18s ease; }
+@keyframes repowiki-slide-in { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+.repowiki-source-head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--rw-line); }
+.repowiki-source-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--rw-fg); }
+.repowiki-source-body { flex: 1 1 auto; overflow: auto; padding: 8px 0 24px; }
+.repowiki-source-line { display: flex; gap: 12px; padding: 0 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.72; white-space: pre; }
+.repowiki-source-line .ln { flex: 0 0 42px; text-align: right; color: var(--rw-fg-3); user-select: none; opacity: .7; }
+.repowiki-source-line .tx { color: var(--rw-fg-2); }
+.repowiki-source-line.is-hit { background: color-mix(in srgb, var(--rw-accent) 13%, transparent); }
+.repowiki-source-line.is-hit .ln { color: var(--rw-accent); opacity: 1; }
+.repowiki-source-line.is-hit .tx { color: var(--rw-fg); }
+
+.repowiki-filter { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--rw-line); border-radius: 8px; background: var(--rw-surface); }
+.repowiki-filter button { height: 22px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--rw-fg-3); font-size: 10.5px; cursor: pointer; }
+.repowiki-filter button.is-active { color: var(--rw-fg); background: color-mix(in srgb, var(--rw-fg) 10%, transparent); }
+.repowiki-search mark { padding: 0 1px; border-radius: 2px; background: color-mix(in srgb, #e0a34a 38%, transparent); color: inherit; }
+.repowiki-recent { margin-bottom: 12px; }
+.repowiki-recent-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.repowiki-recent-list button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border: 1px solid var(--rw-line); border-radius: 999px; background: transparent; color: var(--rw-fg-3); font-size: 10.5px; cursor: pointer; }
+.repowiki-recent-list button:hover { color: var(--rw-fg); background: var(--rw-surface); }
+
 .repowiki-row { transition: background .12s ease, border-color .12s ease; }
 .repowiki-row:hover { background: color-mix(in srgb, var(--rw-fg) 7%, transparent) !important; }
 .repowiki-fade { animation: repowiki-fade-in .25s ease; }
-[data-bidx] { scroll-margin-top: 18px; }
+[data-bidx] { scroll-margin-top: 62px; }
 
 @media (max-width: 980px) {
   .repowiki-sidebar { width: 236px; flex-basis: 236px; }
@@ -726,13 +955,47 @@ window.__ModuleLoader__.load({
   .repowiki-overview, .repowiki-cards, .repowiki-projects { padding: 22px 24px 56px; }
   .repowiki-brand-sub { max-width: 240px; }
 }
+@media (max-width: 1120px) {
+  .repowiki-header { gap: 8px; padding: 8px 12px; }
+  .repowiki-brand-repo { max-width: 110px; }
+  .repowiki-root-btn { max-width: 148px !important; }
+  .repowiki-tab { padding: 0 8px; }
+  .repowiki-tab-label { display: none; }
+  .repowiki-tab { width: 30px; justify-content: center; }
+  .repowiki-brand-sub { max-width: 210px; }
+  .repowiki-generate { display: none; }
+}
+.repowiki-menu-btn { display: none; }
+.repowiki-drawer-mask { display: none; }
 @media (max-width: 760px) {
   .repowiki-sidebar { display: none; }
+  .repowiki-menu-btn { display: inline-flex; }
+  .repowiki-drawer-mask { display: block; position: absolute; inset: 0; z-index: 19; background: rgba(0,0,0,.26); }
+  .repowiki-sidebar.is-open {
+    display: block;
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 86%);
+    background: color-mix(in srgb, var(--rw-surface) 96%, #808080 4%);
+    box-shadow: 18px 0 40px rgba(0,0,0,.22);
+  }
   .repowiki-header { padding: 8px 12px; }
   .repowiki-tabs { order: 3; width: 100%; justify-content: stretch; }
   .repowiki-tab { flex: 1 1 0; justify-content: center; }
   .repowiki-actions { width: 100%; justify-content: flex-end; }
   .repowiki-page-title { font-size: 23px; }
+  .repowiki-source { width: 100%; }
+  .repowiki-toc-rail { display: none; }
+}
+@media (min-width: 1180px) {
+  .repowiki-toc-rail { display: block; position: sticky; top: 18px; flex: 0 0 176px; align-self: flex-start; max-height: calc(100vh - 120px); overflow: auto; padding-left: 14px; border-left: 1px solid var(--rw-line); }
+  .repowiki-toc-rail button { display: block; width: 100%; text-align: left; padding: 3px 0; border: 0; background: transparent; color: var(--rw-fg-3); font-size: 11px; line-height: 1.5; cursor: pointer; }
+  .repowiki-toc-rail button:hover { color: var(--rw-accent); }
+  .repowiki-toc-rail .is-sub { padding-left: 10px; font-size: 10.5px; }
+  .repowiki-toc-inline { display: none; }
 }
         `
         document.head.appendChild(style)
@@ -742,6 +1005,11 @@ window.__ModuleLoader__.load({
     }
 
     /** Perceptual tone of a page status, shared by dots and chips. */
+
+/* ---- 40-components.js ----
+ * Status atoms, buttons, chips, glyphs and copy control.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     const STATUS_TONE = {
       fresh: '#3fbf7f',
       stale: '#e0a34a',
@@ -814,6 +1082,10 @@ window.__ModuleLoader__.load({
      * knowledge-graph layout helpers (plan v2 §四 P0'-1)
      * ------------------------------------------------------------------ */
 
+/* ---- 45-graph.js ----
+ * Deterministic layered layout and edge routing.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     const GRAPH_NODE_W = 190
     const GRAPH_NODE_H = 60
     const GRAPH_GAP_X = 110
@@ -938,6 +1210,11 @@ window.__ModuleLoader__.load({
      * Render one run of text with `inline code` spans; a code span shaped like
      * `path:line` becomes a citation chip that copies itself on click.
      */
+
+/* ---- 50-markdown.js ----
+ * Inline text and markdown block rendering.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     function InlineText(props) {
       const text = String(props.text ?? '')
       const parts = []
@@ -984,9 +1261,15 @@ window.__ModuleLoader__.load({
             'code',
             {
               key: index,
-              title: isCitation ? props.t ? props.t('copyCitation') : value : undefined,
+              title: isCitation ? props.t ? props.t('openSource') : value : undefined,
               onClick: isCitation
                 ? () => {
+                    if (typeof props.onOpenSource === 'function') {
+                      props.onOpenSource(value)
+                      return
+                    }
+                    // Without a source viewer (for example inside the graph
+                    // inspector) the chip keeps its copy behaviour.
                     try {
                       if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(value)
                     } catch {
@@ -1076,6 +1359,9 @@ window.__ModuleLoader__.load({
       plus: ['M12 5v14', 'M5 12h14'],
       minus: ['M5 12h14'],
       reset: ['M4 10a8 8 0 1 1 2.3 6', 'M4 5v5h5'],
+      more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01'],
+      link: ['M10.5 13.5a3.5 3.5 0 0 0 5 0l2.5-2.5a3.54 3.54 0 0 0-5-5l-1 1', 'M13.5 10.5a3.5 3.5 0 0 0-5 0L6 13a3.54 3.54 0 0 0 5 5l1-1'],
+      menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
     }
 
     function Glyph(props) {
@@ -1099,11 +1385,39 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** A quiet copy control used by code blocks and the source peek. */
+    function CopyButton(props) {
+      const [done, setDone] = useState(false)
+      const copy = () => {
+        try {
+          if (navigator.clipboard?.writeText) {
+            void navigator.clipboard.writeText(String(props.text ?? ''))
+            setDone(true)
+            setTimeout(() => setDone(false), 1400)
+          }
+        } catch {
+          // A denied clipboard is not worth breaking the page.
+        }
+      }
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'repowiki-copy',
+          title: props.title || (props.t ? props.t('codeCopy') : 'Copy'),
+          'aria-label': props.title || (props.t ? props.t('codeCopy') : 'Copy'),
+          onClick: copy,
+        },
+        done ? (props.t ? props.t('codeCopied') : 'Copied') : (props.label || (props.t ? props.t('codeCopy') : 'Copy')),
+      )
+    }
+
     /** Render one parsed markdown block. */
     function MarkdownBlock(props) {
       const block = props.block
       const t = props.t
       const onOpenCard = props.onOpenCard
+      const onOpenSource = props.onOpenSource
       const mono = {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: '12.5px',
@@ -1124,7 +1438,7 @@ window.__ModuleLoader__.load({
               color: token('--dsw-alias-label-primary', '#e6e6e6'),
             },
           },
-          h(InlineText, { text: block.text, t, onOpenCard }),
+          h(InlineText, { text: block.text, t, onOpenCard, onOpenSource }),
         )
       }
       if (block.type === 'paragraph') {
@@ -1138,7 +1452,7 @@ window.__ModuleLoader__.load({
               color: token('--dsw-alias-label-secondary', '#a8a8a8'),
             },
           },
-          h(InlineText, { text: block.text, t, onOpenCard }),
+          h(InlineText, { text: block.text, t, onOpenCard, onOpenSource }),
         )
       }
       if (block.type === 'list') {
@@ -1154,7 +1468,7 @@ window.__ModuleLoader__.load({
             },
           },
           block.items.map((item, index) =>
-            h('li', { key: index, style: { marginBottom: '4px' } }, h(InlineText, { text: item, t, onOpenCard })),
+            h('li', { key: index, style: { marginBottom: '4px' } }, h(InlineText, { text: item, t, onOpenCard, onOpenSource })),
           ),
         )
       }
@@ -1198,6 +1512,8 @@ window.__ModuleLoader__.load({
               { style: { fontSize: '10px', letterSpacing: '0.05em', textTransform: 'uppercase', color: token('--dsw-alias-label-tertiary', '#7d7d7d') } },
               block.type === 'mermaid' ? 'mermaid · diagram' : block.language || 'code',
             ),
+            h('div', { style: { flex: '1 1 auto' } }),
+            h(CopyButton, { text: block.code, t }),
           ),
           h(
             'pre',
@@ -1283,7 +1599,7 @@ window.__ModuleLoader__.load({
                           verticalAlign: 'top',
                         },
                       },
-                      h(InlineText, { text: String(cell ?? ''), t, onOpenCard }),
+                      h(InlineText, { text: String(cell ?? ''), t, onOpenCard, onOpenSource }),
                     ),
                   ),
                 ),
@@ -1307,7 +1623,7 @@ window.__ModuleLoader__.load({
               lineHeight: 1.65,
             },
           },
-          h(InlineText, { text: block.text, t, onOpenCard }),
+          h(InlineText, { text: block.text, t, onOpenCard, onOpenSource }),
         )
       }
       if (block.type === 'hr') {
@@ -1338,6 +1654,11 @@ window.__ModuleLoader__.load({
      * @param {number} status the HTTP status
      * @returns {{ code: string, message: string, hint: string }}
      */
+
+/* ---- 60-request.js ----
+ * JSON request, error normalisation and abort helpers.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     function normalizeError(payload, status) {
       const fallbackCode = `HTTP_${status || 0}`
       const raw = payload && typeof payload === 'object' ? payload.error ?? payload : null
@@ -1419,6 +1740,10 @@ window.__ModuleLoader__.load({
       return normalizeError(null, 0)
     }
 
+/* ---- 70-panel.js ----
+ * The RepoWiki panel: state machine, views and interactions.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     /** The central panel: a page tree on the left, the selected page on the right. */
     function RepoWikiPanel(props) {
       const t = props.t
@@ -1450,11 +1775,24 @@ window.__ModuleLoader__.load({
       const [helpOpen, setHelpOpen] = useState(false)
       // The workspace switcher menu (a hand-drawn dropdown, not a `<select>`).
       const [rootMenuOpen, setRootMenuOpen] = useState(false)
+      // Narrow windows hide the sidebar; this opens it as a drawer.
+      const [sidebarOpen, setSidebarOpen] = useState(false)
+      // The "more" menu (import entries) and the pending import confirmation.
+      const [moreOpen, setMoreOpen] = useState(false)
+      const [pendingImport, setPendingImport] = useState(null)
+      // The citation source peek: `{ path, line }` while loading, then the
+      // payload returned by `/api/repowiki/source`.
+      const [sourcePeek, setSourcePeek] = useState(null)
+      const [sourcePeekError, setSourcePeekError] = useState(null)
+      // Search status filter and recently opened pages.
+      const [searchFilter, setSearchFilter] = useState('all')
+      const [recent, setRecent] = useState(() => readRecentPages())
       // The engineering knowledge graph view (mode 'graph').
       const [graphData, setGraphData] = useState(null)
       const [graphLevel, setGraphLevel] = useState('module')
       const [graphModule, setGraphModule] = useState('')
       const [graphLoading, setGraphLoading] = useState(false)
+      const [graphStale, setGraphStale] = useState(false)
       const [graphHover, setGraphHover] = useState(null)
       const [graphSelected, setGraphSelected] = useState(null)
       const [graphImpact, setGraphImpact] = useState(null)
@@ -1468,6 +1806,9 @@ window.__ModuleLoader__.load({
       const panFrameRef = useRef(0)
       const pendingPanRef = useRef(null)
       const impactAbortRef = useRef(null)
+      const graphFetchedAtRef = useRef(0)
+      const graphSignatureRef = useRef(null)
+      const graphCheckRef = useRef(0)
       const svgRef = useRef(null)
       const baseBoxRef = useRef(null)
       const searchTimer = useRef(null)
@@ -1508,12 +1849,23 @@ window.__ModuleLoader__.load({
         [root],
       )
 
-      /** Load the panel overview. */
+      /** Load the panel overview (stale-while-revalidate). */
       const load = useCallback(async () => {
-        setLoading(true)
+        const key = panelCacheKey(root, effectiveLanguage)
+        const cached = readPanelCache(key)
+        // Render the previous answer immediately; the request below replaces
+        // it when it lands. This removes the blank first paint on slow repos.
+        if (cached) {
+          setPanel(cached.data)
+          setError(null)
+          setLoading(false)
+        } else {
+          setLoading(true)
+        }
         try {
           const data = await requestJson(`/api/repowiki/panel?${languageQuery}${rootQuery}`)
           setPanel(data)
+          writePanelCache(key, data)
           setError(null)
           return data
         } catch (cause) {
@@ -1523,7 +1875,7 @@ window.__ModuleLoader__.load({
         } finally {
           setLoading(false)
         }
-      }, [languageQuery, rootQuery])
+      }, [effectiveLanguage, languageQuery, root, rootQuery])
 
       useEffect(() => {
         void load()
@@ -1548,6 +1900,7 @@ window.__ModuleLoader__.load({
         async (id) => {
           if (!id) return null
           setMode('wiki')
+          setSidebarOpen(false)
           setOpening(true)
           try {
             const data = await requestJson(
@@ -1556,6 +1909,13 @@ window.__ModuleLoader__.load({
             setPage(data)
             setCurrentId(id)
             setError(null)
+            setRecent(
+              rememberPage({
+                id,
+                title: data?.meta?.title || data?.title || id,
+                at: Date.now(),
+              }),
+            )
             return data
           } catch (cause) {
             if (isAbortError(cause)) return null
@@ -1650,10 +2010,11 @@ window.__ModuleLoader__.load({
        * the open page refresh so the reader never presses refresh by hand.
        */
       const generate = useCallback(
-        async (mode) => {
+        async (mode, languageOverride) => {
           if (busy) return
+          const targetLanguage = languageOverride || effectiveLanguage
           setBusy(true)
-          setGen({ status: 'running', phase: 'scan', done: 0, total: 0, failed: 0, current: null, mode })
+          setGen({ status: 'running', phase: 'scan', done: 0, total: 0, failed: 0, current: null, mode, language: targetLanguage })
           const poll = setInterval(() => {
             void requestJson(`/api/repowiki/progress?${languageQuery}${rootQuery}`)
               .then((data) => {
@@ -1667,9 +2028,11 @@ window.__ModuleLoader__.load({
           try {
             await requestJson('/api/repowiki/generate', {
               method: 'POST',
-              body: { mode, language: effectiveLanguage, dry_run: false, root: root || undefined },
+              body: { mode, language: targetLanguage, dry_run: false, root: root || undefined },
             })
             setError(null)
+            if (targetLanguage !== effectiveLanguage) setLanguage(targetLanguage)
+            clearPanelCache()
             await load()
             if (currentId) await openPage(currentId)
           } catch (cause) {
@@ -1686,11 +2049,13 @@ window.__ModuleLoader__.load({
             setBusy(false)
             // The wiki on disk changed: the graph is rebuilt on next view.
             setGraphData(null)
+            graphFetchedAtRef.current = 0
+            graphSignatureRef.current = null
+            setGraphStale(false)
           }
         },
         [busy, currentId, effectiveLanguage, languageQuery, load, openPage, root, rootQuery],
       )
-
       /** Cancel the active generation through the host. */
       const cancelGenerate = useCallback(async () => {
         try {
@@ -1735,6 +2100,9 @@ window.__ModuleLoader__.load({
             setGraphImpact(null)
             setGraphQuery('')
             setViewBoxState(null)
+            setGraphStale(false)
+            graphFetchedAtRef.current = Date.now()
+            graphSignatureRef.current = data?.signature ?? null
             return data
           } catch (cause) {
             if (!isAbortError(cause)) setError(toErrorState(cause))
@@ -1776,9 +2144,116 @@ window.__ModuleLoader__.load({
         [graphLevel, graphSelected, languageQuery, rootQuery],
       )
 
+      /**
+       * Open the source behind a `path:line` citation in the side drawer.
+       *
+       * The host validates the path (relative, inside the root, non-secret);
+       * the browser never reads the filesystem directly.
+       */
+      const openSource = useCallback(
+        async (token) => {
+          const parsed = parseCitation(token)
+          if (!parsed) return null
+          setSourcePeek({ loading: true, path: parsed.path, line: parsed.line, endLine: parsed.endLine, token })
+          setSourcePeekError(null)
+          try {
+            const data = await requestJson(
+              `/api/repowiki/source?path=${encodeURIComponent(parsed.path)}&line=${parsed.line}&context=16${rootQuery}`,
+            )
+            setSourcePeek({ loading: false, ...data, token })
+            return data
+          } catch (cause) {
+            if (isAbortError(cause)) return null
+            setSourcePeekError(toErrorState(cause))
+            setSourcePeek((current) => (current ? { ...current, loading: false } : current))
+            return null
+          }
+        },
+        [rootQuery],
+      )
+
+      /** Close the source peek drawer. */
+      const closeSource = useCallback(() => {
+        setSourcePeek(null)
+        setSourcePeekError(null)
+      }, [])
+
+      // Escape closes the source drawer and the import dialog.
       useEffect(() => {
-        if (mode === 'graph' && !graphData && !graphLoading) void fetchGraph('module')
-      }, [mode, graphData, graphLoading, fetchGraph])
+        if (!sourcePeek && !pendingImport && !helpOpen && !moreOpen) return
+        const onKey = (event) => {
+          if (event.key !== 'Escape') return
+          if (sourcePeek) closeSource()
+          else if (pendingImport) setPendingImport(null)
+          else if (helpOpen) setHelpOpen(false)
+          else if (moreOpen) setMoreOpen(false)
+        }
+        document.addEventListener('keydown', onKey)
+        return () => document.removeEventListener('keydown', onKey)
+      }, [sourcePeek, pendingImport, helpOpen, moreOpen, closeSource])
+
+      /** Import a wiki produced elsewhere, after an explicit confirmation. */
+      const runImport = useCallback(
+        async (source) => {
+          setPendingImport(null)
+          setBusy(true)
+          try {
+            const result = await requestJson('/api/repowiki/import', {
+              method: 'POST',
+              body: { source, root: root || undefined, backup: true },
+            })
+            clearPanelCache()
+            await load()
+            showToast(`${t('importDone')} · ${result?.pages ?? 0} ${t('pages')}`)
+          } catch (cause) {
+            if (!isAbortError(cause)) showToast(`${t('importFailed')}：${toErrorState(cause).message}`)
+          } finally {
+            setBusy(false)
+          }
+        },
+        [load, root, showToast, t],
+      )
+
+      useEffect(() => {
+        if (mode !== 'graph') return
+        // A cached graph is reused for a short window; after that it is
+        // refreshed silently so source edits show up without a manual click.
+        if (!graphData || Date.now() - graphFetchedAtRef.current > GRAPH_TTL_MS) {
+          void fetchGraph(graphLevel, graphModule)
+        }
+        // `graphLevel` / `graphModule` are intentionally not dependencies:
+        // switching level calls `fetchGraph` itself.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [mode, graphData, fetchGraph])
+
+      // Freshness check: the server rebuilds the index from the current source
+      // tree, so comparing its scan signature with the one the graph was built
+      // from tells us whether the picture on screen is still current.
+      useEffect(() => {
+        if (mode !== 'graph' || !graphData) return
+        let cancelled = false
+        const check = async () => {
+          if (cancelled) return
+          const started = Date.now()
+          if (started - graphCheckRef.current < 4000) return
+          graphCheckRef.current = started
+          try {
+            const data = await requestJson(`/api/repowiki/graph?signatureOnly=1&${rootQuery}`)
+            if (cancelled) return
+            if (data?.signature && graphSignatureRef.current && data.signature !== graphSignatureRef.current) {
+              setGraphStale(true)
+            }
+          } catch {
+            // A failed freshness probe keeps the last known state.
+          }
+        }
+        void check()
+        const timer = setInterval(() => void check(), GRAPH_CHECK_MS)
+        return () => {
+          cancelled = true
+          clearInterval(timer)
+        }
+      }, [mode, graphData, rootQuery])
 
       // Wheel zoom anchored at the cursor. A native non-passive listener is
       // required: React registers wheel handlers passively, and a zooming
@@ -1862,6 +2337,24 @@ window.__ModuleLoader__.load({
 
       const cardCount = panel && Array.isArray(panel.cards) ? panel.cards.length : 0
       const hasWiki = Boolean(panel && panel.exists)
+      // Languages that actually have pages: switching to a missing one must
+      // explain itself instead of rendering an empty wiki.
+      const availableLanguages = Array.isArray(panel?.availableLanguages) ? panel.availableLanguages : []
+      const languageMissing = Boolean(
+        panel && panel.exists && availableLanguages.length > 0 && !availableLanguages.includes(effectiveLanguage),
+      )
+      // The host and the browser half are versioned together; a mismatch means
+      // the shell is still serving an older bundle and a reload is required.
+      const clientStale = Boolean(panel?.serverVersion && panel.serverVersion !== CLIENT_VERSION)
+      // Search results obey the status filter; the raw count stays available
+      // in the header so an empty filtered list is explained.
+      const filteredHits = hits
+        ? (hits.hits ?? []).filter((hit) => {
+            if (searchFilter === 'all') return true
+            if (searchFilter === 'fresh') return hit.status === 'fresh'
+            return hit.status !== 'fresh'
+          })
+        : null
       const modeTab = (id, icon, label) =>
         h(
           'button',
@@ -1869,15 +2362,41 @@ window.__ModuleLoader__.load({
             type: 'button',
             className: `repowiki-tab${mode === id ? ' is-active' : ''}`,
             'aria-pressed': mode === id ? 'true' : 'false',
+            'aria-label': label,
+            title: label,
             onClick: () => setMode(id),
           },
           h(Glyph, { name: icon, size: 13 }),
-          label,
+          h('span', { className: 'repowiki-tab-label' }, label),
         )
 
       const header = h(
         'header',
         { className: 'repowiki-header' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'repowiki-menu-btn repowiki-btn is-icon',
+            title: sidebarOpen ? t('sidebarClose') : t('sidebarOpen'),
+            'aria-label': sidebarOpen ? t('sidebarClose') : t('sidebarOpen'),
+            'aria-expanded': sidebarOpen ? 'true' : 'false',
+            onClick: () => setSidebarOpen((open) => !open),
+          },
+          h(Glyph, { name: 'menu', size: 15 }),
+        ),
+        clientStale
+          ? h(
+              'span',
+              {
+                className: 'repowiki-badge-stale',
+                title: t('restartHint'),
+                role: 'status',
+              },
+              '!',
+              t('restartHint'),
+            )
+          : null,
         h(
           'button',
           {
@@ -1947,7 +2466,7 @@ window.__ModuleLoader__.load({
                   'button',
                   {
                     type: 'button',
-                    className: 'repowiki-btn',
+                    className: 'repowiki-btn repowiki-root-btn',
                     'aria-label': t('repository'),
                     'aria-expanded': rootMenuOpen ? 'true' : 'false',
                     title: currentPath,
@@ -2061,15 +2580,19 @@ window.__ModuleLoader__.load({
           busy ? t('generating') : t('update'),
         ),
         h(
-          Button,
-          { onClick: () => void generate('full'), disabled: busy, primary: !hasWiki },
-          busy ? t('generating') : t('generate'),
+          'span',
+          { className: 'repowiki-generate' },
+          h(
+            Button,
+            { onClick: () => void generate('full'), disabled: busy, primary: !hasWiki },
+            busy ? t('generating') : t('generate'),
+          ),
         ),
       )
 
       const sidebar = h(
         'aside',
-        { className: 'repowiki-sidebar' },
+        { className: `repowiki-sidebar${sidebarOpen ? ' is-open' : ''}`, 'aria-label': t('allPages') },
         h(
           'div',
           { className: 'repowiki-search' },
@@ -2108,6 +2631,118 @@ window.__ModuleLoader__.load({
             },
             h(Glyph, { name: 'download', size: 14 }),
           ),
+          h(
+            'div',
+            { style: { position: 'relative', flex: '0 0 auto' } },
+            h(
+              Button,
+              {
+                icon: true,
+                onClick: () => setMoreOpen((open) => !open),
+                disabled: busy,
+                title: t('importMenu'),
+                active: moreOpen,
+              },
+              h(Glyph, { name: 'more', size: 14 }),
+            ),
+            moreOpen
+              ? h(
+                  'div',
+                  {
+                    role: 'menu',
+                    'aria-label': t('importMenu'),
+                    style: {
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 6px)',
+                      zIndex: 30,
+                      minWidth: '232px',
+                      padding: '5px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--rw-line)',
+                      background: hostSurface('rgba(30,30,30,0.98)'),
+                      boxShadow: 'var(--rw-shadow)',
+                    },
+                  },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      role: 'menuitem',
+                      className: 'repowiki-row',
+                      onClick: () => {
+                        setMoreOpen(false)
+                        setPendingImport('qoder')
+                      },
+                      style: {
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '7px 9px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: 'transparent',
+                        color: 'var(--rw-fg-2)',
+                        fontSize: '11.5px',
+                        cursor: 'pointer',
+                      },
+                    },
+                    t('importQoder'),
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      role: 'menuitem',
+                      className: 'repowiki-row',
+                      onClick: () => {
+                        setMoreOpen(false)
+                        setPendingImport('dsh')
+                      },
+                      style: {
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '7px 9px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: 'transparent',
+                        color: 'var(--rw-fg-2)',
+                        fontSize: '11.5px',
+                        cursor: 'pointer',
+                      },
+                    },
+                    t('importDsh'),
+                  ),
+                  h('div', { 'aria-hidden': 'true', style: { height: '1px', margin: '5px 3px', background: 'var(--rw-line)' } }),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      role: 'menuitem',
+                      className: 'repowiki-row',
+                      onClick: () => {
+                        setMoreOpen(false)
+                        void generate('full')
+                      },
+                      style: {
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '7px 9px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: 'transparent',
+                        color: 'var(--rw-fg-2)',
+                        fontSize: '11.5px',
+                        cursor: 'pointer',
+                      },
+                    },
+                    t('regenerateAll'),
+                  ),
+                )
+              : null,
+          ),
         ),
         h(
           'div',
@@ -2144,16 +2779,40 @@ window.__ModuleLoader__.load({
                 'div',
                 {
                   style: {
-                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
                     marginBottom: '8px',
+                    fontSize: '11px',
                     color: token('--dsw-alias-label-tertiary', '#7d7d7d'),
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   },
                 },
-                `${t('search')} · ${hits.count}`,
+                h('span', null, `${t('search')} · ${filteredHits.length}`),
+                h(
+                  'div',
+                  { className: 'repowiki-filter', role: 'group', 'aria-label': t('status'), style: { marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 } },
+                  [
+                    ['all', t('filterAll')],
+                    ['fresh', t('filterFresh')],
+                    ['stale', t('filterStale')],
+                  ].map(([id, label]) =>
+                    h(
+                      'button',
+                      {
+                        key: id,
+                        type: 'button',
+                        className: searchFilter === id ? 'is-active' : '',
+                        'aria-pressed': searchFilter === id ? 'true' : 'false',
+                        onClick: () => setSearchFilter(id),
+                      },
+                      label,
+                    ),
+                  ),
+                ),
               ),
-              hits.count === 0
+              filteredHits.length === 0
                 ? h(
                     'div',
                     { style: { fontSize: '12px', color: token('--dsw-alias-label-tertiary', '#7d7d7d'), padding: '8px 4px' } },
@@ -2186,7 +2845,7 @@ window.__ModuleLoader__.load({
                     ),
                   )
                 : null,
-              (hits.hits || []).map((hit) =>
+              (filteredHits || []).map((hit) =>
                 h(
                   'button',
                   {
@@ -2208,41 +2867,72 @@ window.__ModuleLoader__.load({
                       cursor: 'pointer',
                     },
                   },
-                  h(
-                    'div',
-                    { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-                    h(StatusDot, { status: hit.status }),
-                    h('span', { style: { fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, hit.title || hit.id),
-                  ),
+                                      h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+                      h(StatusDot, { status: hit.status }),
+                      h(
+                        'span',
+                        { style: { fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                        highlightParts(hit.title || hit.id, query).map((part, index) =>
+                          part.match ? h('mark', { key: index }, part.text) : h('span', { key: index }, part.text),
+                        ),
+                      ),
+                    ),
                   h(
                     'div',
                     { style: { fontSize: '10px', marginTop: '2px', color: token('--dsw-alias-label-tertiary', '#7d7d7d') } },
                     hit.id,
                   ),
-                  hit.snippet
-                    ? h(
-                        'div',
-                        {
-                          style: {
-                            fontSize: '11px',
-                            marginTop: '3px',
-                            lineHeight: 1.5,
-                            color: token('--dsw-alias-label-tertiary', '#7d7d7d'),
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          },
-                        },
-                        hit.snippet,
-                      )
-                    : null,
+                        hit.snippet
+                          ? h(
+                              'div',
+                              {
+                                style: {
+                                  fontSize: '11px',
+                                  marginTop: '3px',
+                                  lineHeight: 1.5,
+                                  color: token('--dsw-alias-label-tertiary', '#7d7d7d'),
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  overflow: 'hidden',
+                                },
+                              },
+                              highlightParts(hit.snippet, query).map((part, index) =>
+                                part.match ? h('mark', { key: index }, part.text) : h('span', { key: index }, part.text),
+                              ),
+                            )
+                          : null,
                 ),
               ),
             )
           : h(
               'div',
               null,
+              recent.length > 0
+                ? h(
+                    'div',
+                    { className: 'repowiki-recent' },
+                    h('div', { className: 'repowiki-eyebrow', style: { marginBottom: '6px' } }, t('recent')),
+                    h(
+                      'div',
+                      { className: 'repowiki-recent-list' },
+                      recent.map((entry) =>
+                        h(
+                          'button',
+                          {
+                            key: entry.id,
+                            type: 'button',
+                            title: entry.title || entry.id,
+                            onClick: () => void openPage(entry.id),
+                          },
+                          entry.title || entry.id,
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
               panel && panel.sections
                 ? panel.sections.map((section) => {
                     // Update runs mark rewritten pages; a purple dot like the
@@ -2634,6 +3324,12 @@ window.__ModuleLoader__.load({
 
       /** One page: back row, meta chips, a TOC strip and the parsed blocks. */
       const pageView = () => {
+        // The generated body repeats its title as an H1; the panel already
+        // renders that title, so the duplicate heading is dropped (it also
+        // keeps the TOC from listing the page name as its first entry).
+        const visibleBlocks = (page.blocks || [])
+          .map((block, index) => ({ block, index }))
+          .filter((entry) => !(entry.index === 0 && entry.block?.type === 'heading' && entry.block.level === 1))
         const headings = []
         for (let index = 1; index < (page.blocks || []).length; index += 1) {
           const block = page.blocks[index]
@@ -2729,7 +3425,7 @@ window.__ModuleLoader__.load({
                 ),
               )
             : null,
-          (page.blocks || []).map((block, index) => h(MarkdownBlock, { key: index, block, blockIndex: index, t, onOpenCard: (cardRef) => void openPage(cardRef) })),
+          visibleBlocks.map((entry) => h(MarkdownBlock, { key: entry.index, block: entry.block, blockIndex: entry.index, t, onOpenCard: (cardRef) => void openPage(cardRef), onOpenSource: (token) => void openSource(token) })),
         )
       }
 
@@ -2747,7 +3443,7 @@ window.__ModuleLoader__.load({
           h('div', { style: { fontSize: '16px', fontWeight: 650, letterSpacing: '-.02em' } }, t('progressTitle')),
           h(
             'div',
-            { className: 'repowiki-progress-card' },
+            { className: 'repowiki-progress-card', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'false' },
             h(
               'div',
               { className: 'repowiki-progress-phase' },
@@ -2841,7 +3537,8 @@ window.__ModuleLoader__.load({
           return false
         }
 
-        const pad = 30
+        const compact = nodes.length > 0 && nodes.length <= 5
+        const pad = compact ? 16 : 30
         const baseBox = { x: -pad, y: -pad, w: layout.width + pad * 2, h: layout.height + pad * 2 }
         // The live viewBox (null = fit-to-content). The wheel and the zoom
         // buttons mutate it; every rebuild of the graph resets it.
@@ -2849,7 +3546,42 @@ window.__ModuleLoader__.load({
         const box = viewBoxState ?? baseBox
         const viewBox = `${box.x} ${box.y} ${box.w} ${box.h}`
 
+        // Viewport culling: a 300-node graph does not need 300 <g> elements in
+        // the DOM. Nodes outside the camera (plus a margin) are skipped, and an
+        // edge is drawn when at least one of its endpoints is visible. When the
+        // user zooms out far enough, the whole graph is rendered again.
+        const margin = Math.max(box.w, box.h) * 0.2 + 60
+        const culled = nodes.length > GRAPH_CULL_THRESHOLD
+        const visibleIds = new Set()
+        if (culled) {
+          for (const node of nodes) {
+            const p = layout.positions.get(node.id)
+            if (!p) continue
+            const withinX = p.x + GRAPH_NODE_W >= box.x - margin && p.x <= box.x + box.w + margin
+            const withinY = p.y + GRAPH_NODE_H >= box.y - margin && p.y <= box.y + box.h + margin
+            if (withinX && withinY) visibleIds.add(node.id)
+          }
+        }
+        const isVisible = (id) => !culled || visibleIds.has(id)
+
         const selectedNode = nodes.find((node) => node.id === graphSelected) ?? null
+
+        // A node is more than a box: link it to the wiki page that documents
+        // the same files, and (for a file node) to the source peek.
+        const relatedPage = (() => {
+          if (!selectedNode) return null
+          const pages = (panel && panel.pages) || []
+          const filePath = selectedNode.id.startsWith('file:') ? selectedNode.id.slice(5) : selectedNode.path
+          if (selectedNode.type === 'file' && filePath) {
+            return pages.find((entry) => (entry.files ?? []).includes(filePath)) ?? null
+          }
+          const dir = selectedNode.dir ? `${selectedNode.dir}/` : ''
+          if (!dir) return null
+          return pages.find((entry) => (entry.files ?? []).some((file) => String(file).startsWith(dir))) ?? null
+        })()
+        const relatedCard = relatedPage
+          ? ((panel && panel.cards) || []).find((card) => card.id === `card-${relatedPage.id}`) ?? null
+          : null
 
         // Pointer panning: the SVG owns the gesture, the viewBox is the
         // camera. A drag on empty canvas or on a node pans; a press shorter
@@ -3040,6 +3772,19 @@ window.__ModuleLoader__.load({
               ),
               zoomButton('minus', t('graphZoomOut'), 1.25),
               zoomButton('plus', t('graphZoomIn'), 1 / 1.25),
+              graphStale
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'repowiki-badge-stale',
+                      title: t('graphStaleHint'),
+                      onClick: () => void fetchGraph(graphLevel, graphModule),
+                    },
+                    '⟳',
+                    t('graphStale'),
+                  )
+                : null,
               h(
                 Button,
                 { icon: true, title: t('refresh'), onClick: () => void fetchGraph(graphLevel, graphModule) },
@@ -3087,7 +3832,7 @@ window.__ModuleLoader__.load({
                       ref: svgRef,
                       viewBox,
                       preserveAspectRatio: 'xMidYMid meet',
-                      role: 'img',
+                      role: 'group',
                       'aria-label': `${t('graphTitle')}，${t('graphDragHint')}，${t('graphWheelHint')}`,
                       tabIndex: 0,
                       onPointerDown: beginPan,
@@ -3138,6 +3883,7 @@ window.__ModuleLoader__.load({
                       const a = layout.positions.get(edge.from)
                       const b = layout.positions.get(edge.to)
                       if (!a || !b) return null
+                      if (culled && !visibleIds.has(edge.from) && !visibleIds.has(edge.to)) return null
                       const active = graphImpact && impactEdgeActive(edge)
                       const dim = (graphHover && graphHover !== edge.from && graphHover !== edge.to) || (graphSelected && graphImpact && !active)
                       const classes = ['repowiki-graph-edge']
@@ -3154,6 +3900,7 @@ window.__ModuleLoader__.load({
                       const p = layout.positions.get(node.id)
                       if (!p) return null
                       const selected = graphSelected === node.id
+                      if (culled && !selected && !isVisible(node.id)) return null
                       const classes = ['repowiki-graph-node']
                       if (selected) classes.push('is-selected')
                       if (dimmed(node)) classes.push('is-dimmed')
@@ -3248,17 +3995,29 @@ window.__ModuleLoader__.load({
                               h(InlineText, { text: selectedNode.doc, t, onOpenCard: (cardRef) => void openPage(cardRef) }),
                             )
                           : null,
-                        graphLevel === 'module' && selectedNode.type === 'module'
-                          ? h(
-                              'div',
-                              { style: { marginTop: '10px' } },
-                              h(
+                        h(
+                          'div',
+                          { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' } },
+                          graphLevel === 'module' && selectedNode.type === 'module'
+                            ? h(Button, { onClick: () => void fetchGraph('file', selectedNode.dir), title: t('graphDrill') }, t('graphDrill'))
+                            : null,
+                          relatedPage
+                            ? h(Button, { onClick: () => void openPage(relatedPage.id), title: t('wikiLink') }, t('wikiLink'))
+                            : null,
+                          relatedCard
+                            ? h(Button, { onClick: () => void openPage(`card:${relatedCard.id}`), title: t('cardLink') }, t('cardLink'))
+                            : null,
+                          selectedNode.type === 'file'
+                            ? h(
                                 Button,
-                                { onClick: () => void fetchGraph('file', selectedNode.dir), title: t('graphDrill') },
-                                t('graphDrill'),
-                              ),
-                            )
-                          : null,
+                                {
+                                  onClick: () => void openSource(selectedNode.id.slice(5)),
+                                  title: t('openSource'),
+                                },
+                                t('openSource'),
+                              )
+                            : null,
+                        ),
                       )
                     : null,
                 ),
@@ -3520,6 +4279,94 @@ window.__ModuleLoader__.load({
         content = overviewView()
       }
 
+      /** The citation source drawer: path, numbered lines, copy + close. */
+      const sourceDrawer = sourcePeek
+        ? h(
+            'aside',
+            {
+              className: 'repowiki-source',
+              role: 'dialog',
+              'aria-modal': 'true',
+              'aria-label': t('sourceTitle'),
+            },
+            h(
+              'div',
+              { className: 'repowiki-source-head' },
+              h(
+                'div',
+                { style: { flex: '1 1 auto', minWidth: 0 } },
+                h('div', { style: { fontSize: '11px', fontWeight: 600, color: 'var(--rw-fg-3)', marginBottom: '2px' } }, t('sourceTitle')),
+                h('div', { className: 'repowiki-source-path', title: sourcePeek.path }, `${sourcePeek.path}:${sourcePeek.line ?? ''}`),
+              ),
+              h(CopyButton, { text: sourcePeek.token || `${sourcePeek.path}:${sourcePeek.line}`, t }),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'repowiki-help-close',
+                  title: t('sourceClose'),
+                  'aria-label': t('sourceClose'),
+                  onClick: closeSource,
+                },
+                '✕',
+              ),
+            ),
+            h(
+              'div',
+              { className: 'repowiki-source-body' },
+              sourcePeekError
+                ? h(
+                    'div',
+                    { style: { padding: '18px', fontSize: '12px', color: STATUS_TONE['needs-review'] } },
+                    `${t('sourceError')}：${sourcePeekError.message}`,
+                  )
+                : sourcePeek.loading
+                  ? h('div', { style: { display: 'flex', justifyContent: 'center', padding: '28px' } }, h('span', { className: 'repowiki-spinner' }))
+                  : (sourcePeek.lines ?? []).map((line) =>
+                      h(
+                        'div',
+                        {
+                          key: line.number,
+                          className: `repowiki-source-line${line.highlighted ? ' is-hit' : ''}`,
+                        },
+                        h('span', { className: 'ln' }, String(line.number)),
+                        h('span', { className: 'tx' }, line.content === '' ? ' ' : line.content),
+                      ),
+                    ),
+            ),
+          )
+        : null
+
+      /** The import confirmation dialog (backup is always on). */
+      const importDialog = pendingImport
+        ? h(
+            'div',
+            { className: 'repowiki-modal-mask', onClick: () => setPendingImport(null) },
+            h(
+              'div',
+              {
+                className: 'repowiki-modal',
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': t('importTitle'),
+                onClick: (event) => event.stopPropagation(),
+              },
+              h('h3', null, t('importTitle')),
+              h('p', null, t('importHint')),
+              h(
+                'div',
+                { className: 'repowiki-modal-actions' },
+                h(Button, { onClick: () => setPendingImport(null) }, t('cancel')),
+                h(
+                  Button,
+                  { primary: true, disabled: busy, onClick: () => void runImport(pendingImport) },
+                  busy ? t('generating') : t('importConfirm'),
+                ),
+              ),
+            ),
+          )
+        : null
+
       return h(
         'div',
         {
@@ -3535,10 +4382,39 @@ window.__ModuleLoader__.load({
         header,
         h(
           'div',
-          { style: { display: 'flex', flex: '1 1 auto', minHeight: 0, minWidth: 0 } },
+          { style: { display: 'flex', flex: '1 1 auto', minHeight: 0, minWidth: 0, position: 'relative' } },
+          sidebarOpen
+            ? h('div', {
+                className: 'repowiki-drawer-mask',
+                'aria-hidden': 'true',
+                onClick: () => setSidebarOpen(false),
+              })
+            : null,
           sidebar,
-          h('main', { className: 'repowiki-main' }, content),
+          h(
+            'main',
+            { className: 'repowiki-main' },
+            languageMissing
+              ? h(
+                  'div',
+                  { className: 'repowiki-banner', role: 'status' },
+                  h('span', null, `${t('langMissing')}（${t('langMissingHint')} ${availableLanguages.join('、')}）`),
+                  h(
+                    Button,
+                    {
+                      onClick: () => void generate('full', effectiveLanguage),
+                      disabled: busy,
+                      primary: true,
+                    },
+                    busy ? t('generating') : t('generateLang'),
+                  ),
+                )
+              : null,
+            content,
+            sourceDrawer,
+          ),
         ),
+        importDialog,
         toast
           ? h(
               'div',
@@ -3606,6 +4482,11 @@ window.__ModuleLoader__.load({
      *
      * @param {object} ctx the browser plugin context
      */
+
+/* ---- 90-apply.js ----
+ * Slot registration and module teardown.
+ * This file is concatenated into ../../client.js by scripts/build-client.mjs.
+ */
     function apply(ctx) {
       injectPanelStyles()
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'repo-wiki: dictionaries')

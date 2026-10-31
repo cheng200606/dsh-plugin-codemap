@@ -47,6 +47,12 @@ export const ABORT_ROUTE = '/api/repowiki/abort'
 /** Export the wiki of the resolved repository (`POST`, body `{target}`). */
 export const EXPORT_ROUTE = '/api/repowiki/export'
 
+/** Import a wiki produced elsewhere (`POST`, body `{source}`). */
+export const IMPORT_ROUTE = '/api/repowiki/import'
+
+/** Read one source snippet behind a `path:line` citation (`GET`). */
+export const SOURCE_ROUTE = '/api/repowiki/source'
+
 /** The engineering knowledge graph (`GET`, params `level`, `module`, `root`). */
 export const GRAPH_ROUTE = '/api/repowiki/graph'
 
@@ -71,6 +77,7 @@ const READ_ONLY_BODY = 'buffered'
 const STATUS_BY_CODE = {
   [ERROR_CODES.NOT_FOUND]: 404,
   [ERROR_CODES.INVALID_ARGUMENT]: 400,
+  [ERROR_CODES.FORBIDDEN]: 403,
   [ERROR_CODES.CONFLICT]: 409,
   [ERROR_CODES.UNSUPPORTED]: 501,
   [ERROR_CODES.FAILED]: 500,
@@ -290,6 +297,51 @@ export function registerPanelRoutes(ctx, service) {
     },
   })
 
+  // Import a wiki produced elsewhere. The previous wiki is backed up first so
+  // a human-edited page cannot be lost to a one-click migration.
+  add({
+    path: IMPORT_ROUTE,
+    methods: ['POST'],
+    requestBody: 'buffered',
+    fetch: async (request) => {
+      let body = {}
+      try {
+        body = await request.json()
+      } catch {
+        body = {}
+      }
+      try {
+        const root = await service.resolveRequestRoot(rootHint(new URL(request.url)) ?? body?.root)
+        const source = body?.source === 'dsh' ? 'dsh' : 'qoder'
+        const backup = body?.backup === false ? null : await service.backupOutput(root)
+        const result = await service.importWiki(root, source)
+        return Response.json({ ...result, backup })
+      } catch (error) {
+        return errorResponse(error, ERROR_CODES.FAILED)
+      }
+    },
+  })
+
+  // The source behind one citation. The path is validated by the service:
+  // repository-relative only, inside the root, secret files refused.
+  add({
+    path: SOURCE_ROUTE,
+    methods: ['GET'],
+    requestBody: READ_ONLY_BODY,
+    fetch: async (request) => {
+      const url = new URL(request.url)
+      const path = url.searchParams.get('path') ?? ''
+      const line = Number(url.searchParams.get('line') ?? 1) || 1
+      const context = Number(url.searchParams.get('context') ?? 14) || 14
+      try {
+        const root = await service.resolveRequestRoot(rootHint(url))
+        return Response.json(await service.readSourceSnippet(root, path, { line, context }))
+      } catch (error) {
+        return errorResponse(error, ERROR_CODES.NOT_FOUND)
+      }
+    },
+  })
+
   // The engineering knowledge graph: module-level by default, file-level for
   // a single module via `?level=file&module=<dir>`.
   add({
@@ -300,6 +352,9 @@ export function registerPanelRoutes(ctx, service) {
       const url = new URL(request.url)
       try {
         const root = await service.resolveRequestRoot(rootHint(url))
+        if (url.searchParams.get('signatureOnly') === '1') {
+          return Response.json({ root, signature: await service.graphSignature(root) })
+        }
         return Response.json(await service.buildGraph(root, {
           level: url.searchParams.get('level') ?? undefined,
           module: url.searchParams.get('module') ?? undefined,

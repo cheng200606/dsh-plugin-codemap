@@ -10,6 +10,7 @@
 export const ERROR_CODES = {
   NOT_FOUND: 'not_found',
   INVALID_ARGUMENT: 'invalid_argument',
+  FORBIDDEN: 'forbidden',
   CONFLICT: 'conflict',
   FAILED: 'failed',
   UNSUPPORTED: 'unsupported',
@@ -20,6 +21,7 @@ export const ERROR_CODES = {
 export const ERROR_HINTS = {
   [ERROR_CODES.NOT_FOUND]: '请确认页面 id 是否存在（可用 /wiki status 查看页面清单）',
   [ERROR_CODES.INVALID_ARGUMENT]: '请检查请求参数是否合法，例如语言、模板或页面 id。',
+  [ERROR_CODES.FORBIDDEN]: '该路径不在当前工作区信任范围内；请先把它添加为工作区。',
   [ERROR_CODES.CONFLICT]: '请等待当前任务结束后重试',
   [ERROR_CODES.FAILED]: '本次生成未完成，可查看日志后重试。',
   [ERROR_CODES.UNSUPPORTED]: '当前环境暂不支持该操作。',

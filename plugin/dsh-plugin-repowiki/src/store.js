@@ -13,10 +13,11 @@
 import { isAbsolute, join, relative } from 'node:path'
 import { hashEntries, nowIso, toPosix, uniq } from './util.js'
 import { parseYaml } from './yaml.js'
+import { PLUGIN_VERSION } from './version.js'
 
 export const SCHEMA_VERSION = 1
 export const GENERATOR_NAME = 'dsh-plugin-repowiki'
-export const GENERATOR_VERSION = '0.10.0'
+export const GENERATOR_VERSION = PLUGIN_VERSION
 
 /** Resolve the output directory of a repository (absolute native path). */
 export function resolveOutputDir(root, outputDir = '.dsh/repowiki') {
@@ -116,6 +117,9 @@ export function buildMetadata({ generatedAt, repo = {}, plan = {}, pages = [], c
       tag: card.tag ?? (card.tags ?? [])[0] ?? '',
       summary: card.summary ?? '',
       parent: card.parent ?? null,
+      scope: card.scope ?? null,
+      confidence: card.confidence ?? 'medium',
+      sources: card.sources ?? [],
     })),
     stats: {
       modelCalls: stats.modelCalls ?? 0,

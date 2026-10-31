@@ -1,19 +1,20 @@
 # RepoWiki 侧栏面板：入口结构、交互方式、功能模块与竞品分析
 
-> 版本 v1.1（v0.4 迭代后回填真机证据）｜ 日期 2026-10-31 ｜ 关联：[实现与交付报告](dsh-plugin-repowiki-delivery.md) ｜ [设计文档](qoder-repo-wiki-research-and-dsh-plugin-design.md)
-> **v0.10 追加**：图谱左键拖拽、滚轮缩放、键盘平移与整体 UI 重构已完成并真机验证，详见 [v0.10 评估](repowiki-improvement-review-v0.10.md) 与交付报告 §15；本文 §6 中“浏览器侧渲染停留在代码与单测层面”的旧结论已被 v0.10 真机截图取代。
+> 版本 v1.2（v0.11 后回填 P0/P1/P2 修复）｜ 日期 2026-10-31 ｜ 关联：[实现与交付报告](dsh-plugin-repowiki-delivery.md) ｜ [设计文档](qoder-repo-wiki-research-and-dsh-plugin-design.md) ｜ [v0.11 验收](repowiki-v0.11-closeout.md)
+> **v0.10 追加**：图谱左键拖拽、滚轮缩放、键盘平移与整体 UI 重构已完成并真机验证，详见 [v0.10 评估](repowiki-improvement-review-v0.10.md) 与交付报告 §15。
+> **v0.11 追加**：面板新增源码抽屉、SWR 缓存、导入确认、缺失语言提示、窄屏抽屉、图谱节点→Wiki 联动；路由由 5 条扩展到 11 条数据路由 + 降级页，详见交付报告 §16。
 > 本文回答两件事：**① 把 repowiki 做成带左侧栏入口的 DSH 插件，它的入口结构 / 交互方式 / 功能模块长什么样；② 与同类产品横向对比，差距在哪、怎么改。**
 
 ---
 
 ## 0. 一页纸结论
 
-**一句话**：左侧栏入口不是「再写一个页面」，而是把已有的 `ctx.repoWiki` 服务**多开一个渲染面**——宿主侧用 5 条精确 Fetch 路由把服务方法变成 HTTP，浏览器侧用 `sidebar.panellist`（图标）+ `main`（面板）两个槽位把它挂进 Harness 左侧栏，服务、工具、命令、面板共用同一套数据与同一份产物。
+**一句话**：左侧栏入口不是「再写一个页面」，而是把已有的 `ctx.repoWiki` 服务**多开一个渲染面**——宿主侧用 11 条精确 Fetch 数据路由把服务方法变成 HTTP，浏览器侧用 `sidebar.panellist`（图标）+ `main`（面板）两个槽位把它挂进 Harness 左侧栏，服务、工具、命令、面板共用同一套数据与同一份产物。
 
 | 问题 | 结论 | 证据 |
 |---|---|---|
 | 入口在哪里？ | 左侧栏底部图标列表（`sidebar.panellist`，id=`repowiki`，order=50），点击后中央区域切换到 `main` 槽位的 `repowiki` 面板 | `plugin/dsh-plugin-repowiki/client.js` 注册代码；宿主回执 `registered.panel=true` |
-| 数据怎么到浏览器？ | 5 条精确 Fetch 路由：`/api/repowiki/{panel,page,search,generate,app}`（GET×4 + POST×1），全部由 `ctx.repoWiki` 提供服务 | 回执 `registered.routes` 实测 5 条；本地测试 28/28 中的路由断言 |
+| 数据怎么到浏览器？ | 11 条精确 Fetch 数据路由：`panel/page/search/generate/progress/abort/export/import/source/graph/impact` + 降级页 `app`，全部由 `ctx.repoWiki` 提供服务 | 回执 `registered.routes` 实测 12 条（含 app）；e2e 路由断言 |
 | 插件还能被模型用吗？ | 能。面板只是第 4 个入口，`wiki_search`/`wiki_read`/`wiki_generate` + `/wiki` + `repowiki:policy` 全部保留 | 回执 `registered.tools/command/promptSection` |
 | 真机验证到哪一步？ | **端到端已闭环**：宿主侧生成 8 页 / 引用 122/122；`client {composed:true, served:true, bytes:42456}`；5 条路由逐条实测；并发两次生成一成一拒（409 conflict）；Playwright 真机点开侧栏「仓库 Wiki」，面板与正文全部渲染 | 见 §6 与交付报告 §9.5 |
 | 和同类产品比如何？ | 生成成本与可验证性是强项（0 模型调用、122/122 引用可反查）；产物质量、交互深度、协作共享是弱项 | 见 §4 |
@@ -86,7 +87,7 @@ flowchart TB
 | 模块 | 职责 | 关键导出 | 行数 |
 |---|---|---|---|
 | `src/panel.js` | 把元数据组装成面板 DTO：统计、页面、分节、知识卡；单页 DTO 额外把 Markdown 解析成块并分节 | `buildPanelPayload`, `buildPagePayload`, `buildSearchPayload`, `sectionOfPage` | 207 |
-| `src/routes.js` | 5 条精确 Fetch 路由的注册、根目录解析与统一错误映射（400/404/409/500），连接服务缺失时自动降级 | `PANEL_ROUTES`, `APP_ROUTE`, `registerPanelRoutes` | 302 |
+| `src/routes.js` | 11 条数据路由 + 降级页的注册、根目录信任校验与统一错误映射（400/403/404/409/500），连接服务缺失时自动降级 | `PANEL_ROUTES`, `APP_ROUTE`, `registerPanelRoutes` | 302 |
 | `src/markdown.js` | 受限 Markdown 解析器（标题/段落/列表/代码/mermaid/表格/引用/分隔线），零依赖 | `parseMarkdownBlocks` | 266 |
 | `src/schema.js` | 原生 Schemastery 协议节点构造器，让配置能在 Harness 配置编辑器里被投影成 JSON Schema | `object`, `string`, `number`, `union`, `constant`, `validateNode` | 248 |
 
@@ -220,7 +221,7 @@ flowchart TB
 |---|---|---|
 | 侧栏图标 + 主面板注册代码 | ✅ 已完成 | `client.js`：`ctx.slots.inject('sidebar.panellist'/'main', …)` |
 | 配置 schema 投影（不再是 `unsupported`） | ✅ **宿主实跑确认** | `Config.listConfigs` → `status:"schema"`、`acceptsMissing:true`、`limitations:[]`，并返回含 10 个属性说明的完整 JSON Schema |
-| 5 条精确 Fetch 路由注册 | ✅ **宿主实跑确认** | `.dsh/repowiki/meta/runtime.json` → `registered.routes` 5 条、`registered.panel=true`、`services.connection=true` |
+| 11 条数据路由 + 降级页注册 | ✅ **宿主实跑确认** | `.dsh/repowiki/meta/runtime.json` → `registered.routes` 12 条、`registered.panel=true`、`services.connection=true` |
 | 模型工具 / 命令 / 提示词段 | ✅ 宿主实跑确认 | 同上 `registered.tools[3] / command / promptSection` |
 | 面板 DTO + Markdown 解析 | ✅ 本地 28/28 断言 | `node test/local-e2e.mjs` |
 | 客户端半体入图 + 取包 | ✅ **宿主实跑确认（v0.4）** | `meta/runtime.json` → `client {available:true, composed:true, served:true, rev:"a721bf9d4c15", bytes:42456}`；`src/client-graph.js` 用 `clientModules.graph()` + `fetchBundle()` 走浏览器同一条取包路径 |
