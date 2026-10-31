@@ -49,7 +49,9 @@ try {
 
 if (checkOnly) {
   const current = await readFile(outputPath, 'utf8')
-  if (current !== source) {
+  // Git may check the file out with CRLF on Windows; only content matters.
+  const normalize = (text) => text.replace(/\r\n/g, '\n')
+  if (normalize(current) !== normalize(source)) {
     console.error('client.js is stale; run `node scripts/build-client.mjs`')
     process.exit(1)
   }
