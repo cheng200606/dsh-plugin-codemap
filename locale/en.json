@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "CodeMap",
+    "description": "Builds and serves a source-grounded repository code map: plan, generate and refresh pages with verified path:line citations."
+  }
+}

@@ -443,11 +443,11 @@ A plugin installed **into a profile** through `cordis-plugin-loader` does **not*
 
    ```js
    export default {
-     name: 'repowiki',           // optional: display/runtime name
+     name: 'codemap',           // optional: display/runtime name
      inject: ['fs'],             // optional: services this plugin needs
      // Config: optional standard-schema object; omit for plain-object config
      apply(ctx, config) {
-       const dispose = ctx.provide('repowiki', { /* api */ });
+       const dispose = ctx.provide('codemap', { /* api */ });
        ctx.on('some-event', async (payload, next) => { /* waterfall */ await next(); }, { prepend: true });
        ctx.effect(() => async () => { /* cleanup */ });
        return dispose;           // returned function is collected as the disposer
@@ -455,7 +455,7 @@ A plugin installed **into a profile** through `cordis-plugin-loader` does **not*
    }
    ```
 
-   - `ctx.provide` registers the service with **no cordis import** (`:800-824`); consumers read it via `ctx.get('repowiki')` or by declaring `inject: ['repowiki']` (then `ctx.repowiki`).
+   - `ctx.provide` registers the service with **no cordis import** (`:800-824`); consumers read it via `ctx.get('codemap')` or by declaring `inject: ['codemap']` (then `ctx.codemap`).
    - `inject: ['fs']` is what makes `ctx.fs` legal; without a declaration, `ctx.fs` throws `cannot get property "fs" without inject` (`:676`).
    - `Config` must be a **standard-schema** object (`{ "~standard": { version: 1, vendor, validate(v) } }`); a plain object would crash at `runtime.Config["~standard"].validate` (`:958`).
 3. **Cordis-import style** (adds `@deepseek-ai/cordis` as a dependency):
@@ -464,8 +464,8 @@ A plugin installed **into a profile** through `cordis-plugin-loader` does **not*
    import { Service } from '@deepseek-ai/cordis'
    export default class RepoWikiService extends Service {
      static inject = ['fs']
-     static provide = 'repowiki'        // default service name
-     constructor(ctx, config) { super(ctx, 'repowiki'); /* ... */ }
+     static provide = 'codemap'        // default service name
+     constructor(ctx, config) { super(ctx, 'codemap'); /* ... */ }
      async *[Service.init]() { /* yield disposer */ }
    }
    ```

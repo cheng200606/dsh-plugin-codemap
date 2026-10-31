@@ -1,0 +1,87 @@
+{
+  "name": "dsh-plugin-codemap",
+  "version": "0.12.0",
+  "type": "module",
+  "description": "DeepSeek Harness 插件 CodeMap：把仓库编译成带 path:line 源码引用的代码地图。确定性生成页面与知识卡片、交互式知识图谱、模型工具 codemap_search/read/generate/status 与 /codemap 命令；零模型调用、离线可跑、引用可校验。",
+  "license": "MIT",
+  "author": {
+    "name": "程夏"
+  },
+  "homepage": "https://github.com/OWNER/dsh-plugin-codemap#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/dsh-plugin-codemap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OWNER/dsh-plugin-codemap/issues"
+  },
+  "main": "./index.js",
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "check:client": "node scripts/build-client.mjs --check",
+    "test": "node test/client-graph.mjs && node test/local-e2e.mjs",
+    "check": "node scripts/build-client.mjs && node scripts/check-version.mjs && node test/client-graph.mjs && node test/local-e2e.mjs",
+    "prepublishOnly": "node scripts/build-client.mjs && node scripts/check-version.mjs"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.5 <0.3.0-0",
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "client/**/*.js",
+    "src/**/*.js",
+    "scripts/**/*.mjs",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "codemap",
+    "code-map",
+    "repository",
+    "wiki",
+    "documentation",
+    "knowledge-graph",
+    "source-grounded",
+    "code-intelligence",
+    "developer-tools",
+    "代码地图",
+    "知识图谱"
+  ],
+  "icon": "icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    },
+    "compatibility": {
+      "dsh": ">=0.2.1-rc.5 <0.3.0-0",
+      "dshReleases": {
+        "0.2.1-rc.5": "compatible",
+        "0.2.2-alpha.2": "compatible"
+      }
+    }
+  }
+}

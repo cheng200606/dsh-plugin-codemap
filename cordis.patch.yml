@@ -1,0 +1,12 @@
+- insert:
+    - id: codemap
+      name: 'dsh-plugin-codemap'
+      config:
+        outputDir: '.dsh/codemap'
+        maxFiles: 8000
+        maxPages: 24
+        maxFileBytes: 524288
+        concurrency: 3
+        defaultLanguage: 'zh'
+        defaultTemplate: 'architecture'
+        autoUpdate: false
