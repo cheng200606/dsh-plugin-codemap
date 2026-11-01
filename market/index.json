@@ -1,0 +1,78 @@
+{
+  "format": 1,
+  "title": {
+    "en": "CodeMap Plugin Index",
+    "zh": "CodeMap 插件源"
+  },
+  "description": {
+    "en": "Self-hosted DeepSeek Harness plugin index for CodeMap and its future siblings. Add this URL under Plugin Market → Sources to install without publishing to npm.",
+    "zh": "CodeMap 及后续同系列插件的自托管索引。在插件市场 → 源地址里添加本 URL，即可在未发布 npm 包的情况下直接安装。"
+  },
+  "metadata": {
+    "categories": {
+      "docs": {
+        "title": { "en": "Documentation", "zh": "文档" }
+      },
+      "dev": {
+        "title": { "en": "Developer Tools", "zh": "开发工具" }
+      }
+    },
+    "labels": {
+      "offline": {
+        "title": { "en": "Runs offline", "zh": "离线可跑" }
+      },
+      "zero-dependency": {
+        "title": { "en": "Zero dependencies", "zh": "零依赖" }
+      }
+    },
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-plugin-codemap",
+      "title": {
+        "en": "CodeMap",
+        "zh": "代码地图"
+      },
+      "description": {
+        "en": "Compiles a repository into a source-grounded code map: structured pages where every claim carries a verifiable path:line citation, an interactive dependency graph, knowledge cards, four model tools and the /codemap command. Deterministic, no model calls, zero dependencies.",
+        "zh": "把代码仓库编译成带 path:line 源码引用的代码地图：结构化页面、可拖拽依赖图谱、知识卡片、四个模型工具与 /codemap 命令。确定性生成、不调用模型、零第三方依赖。"
+      },
+      "icon": "icon.svg",
+      "author": "程夏",
+      "homepage": "https://github.com/cheng200606/dsh-plugin-codemap#readme",
+      "repository": {
+        "url": "https://github.com/cheng200606/dsh-plugin-codemap"
+      },
+      "metadata": {
+        "category": "docs",
+        "keywords": [
+          "codemap",
+          "code map",
+          "code intelligence",
+          "documentation",
+          "knowledge graph",
+          "source grounded",
+          "代码地图",
+          "知识图谱"
+        ],
+        "labels": ["offline", "zero-dependency"],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.12.0",
+          "publishTimestamp": 1793500497,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/cheng200606/dsh-plugin-codemap",
+            "commit": "7c08739cd62ea2559b7df91c3d911cf245752bcd"
+          },
+          "engines": {
+            "dsh": ">=0.2.1-rc.5 <0.3.0-0"
+          }
+        }
+      ]
+    }
+  ]
+}

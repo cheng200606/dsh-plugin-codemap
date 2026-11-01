@@ -65,41 +65,62 @@ AI 编程助手进入一个陌生仓库时，最贵的两件事是**读源码**�
 
 ## 安装
 
-### 方式一：DeepSeek Harness 插件社区（推荐）
+| 方式 | 命令 / 入口 | 适用 |
+|---|---|---|
+| 插件市场 | 市场 → 添加源 → 搜索 `codemap` | 已收录后最省事 |
+| 命令行（Git） | `dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git` | **现在就能用**，无需 npm |
+| 命令行（npm） | `dsh plugin add dsh-plugin-codemap` | 发布 npm 之后 |
+| 本地开发 | `link:` 到 profile | 改代码 |
 
-1. 打开 Harness → 插件市场（Plugin Market）
-2. 搜索 `codemap`（或 `dsh-plugin-codemap`）
-3. 点击安装 → Harness 自动从 npm 拉取并注册
-
-### 方式二：npm 直接安装
-
-```bash
-npm install -g dsh-plugin-codemap
-```
-
-### 方式三：本地开发（link）
+### 方式一：从 Git 直接安装（当前可用）
 
 ```bash
-git clone https://github.com/cheng200606/dsh-plugin-codemap.git
-cd dsh-plugin-codemap
-npm install          # 无运行时依赖，这一步只为建立 link
+dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git
 ```
 
-在 Harness 的 profile 目录（`~/.dsh/profiles/<profile>/`）里：
+安装后把 `dsh-plugin-codemap` 加进 profile 的 bundle 列表，并重启 Harness：
 
 ```jsonc
-// package.json
+// ~/.dsh/profiles/<profile>/package.json
 {
-  "dependencies": {
-    "dsh-plugin-codemap": "link:/绝对路径/dsh-plugin-codemap"
-  },
   "dsh": { "profile": { "bundles": ["dsh-plugin-codemap"] } }
 }
 ```
 
-然后 `pnpm install`，并在插件管理里把 `dsh-plugin-codemap` 设为启用。
+### 方式二：插件市场（社区目录）
 
-> 改完浏览器半体（`client/*.js`）后需要 `npm run build` 重新生成 `client.js`，再重载 Harness。
+1. 打开 Harness → 插件市场 → **源（Sources）**，添加：
+   `https://cdn.jsdelivr.net/gh/cheng200606/dsh-plugin-codemap@main/market/index.json`
+2. 搜索 `codemap` → 一键安装
+
+> Harness 的市场默认不内置任何源，社区源的地址需要自己添加一次。收录进社区总目录（`dsh-plugin-catalog`）后，这一步会随总源自动生效。
+
+### 方式三：npm
+
+```bash
+dsh plugin add dsh-plugin-codemap
+```
+
+### 方式四：本地开发（link）
+
+```bash
+git clone https://github.com/cheng200606/dsh-plugin-codemap.git
+cd dsh-plugin-codemap
+npm run check        # 无运行时依赖，这里只跑构建与回归
+```
+
+在 profile 的 `package.json` 里：
+
+```jsonc
+{
+  "dependencies": { "dsh-plugin-codemap": "link:/绝对路径/dsh-plugin-codemap" },
+  "dsh": { "profile": { "bundles": ["dsh-plugin-codemap"] } }
+}
+```
+
+`pnpm install` 后重启 Harness。改完浏览器半体（`client/*.js`）要 `npm run build` 重新生成 `client.js`。
+
+完整发布流程与收录规则见 [发布与安装](docs/publishing.md)。
 
 ## 使用
 
@@ -177,10 +198,13 @@ scripts/            build-client（拼接 + 版本注入）、check-version
 | 文档 | 内容 |
 |---|---|
 | [技术参考](docs/technical-reference.md) | 接口清单、流水线、安全边界、目录说明 |
+| [发布与安装](docs/publishing.md) | 四条安装路径、社区收录流程、npm 发布、上线检查清单 |
+| [发布检查清单](docs/release-checklist.md) | 每次发版的逐项核对表 |
 | [交付报告](docs/delivery-report.md) | 每轮迭代的功能范围、实测数据、缺陷复盘 |
 | [v0.11 验收](docs/v0.11-closeout.md) | P0/P1/P2 问题逐项修复与验证 |
 | [竞品分析](docs/panel-and-competitive-analysis.md) | 与 Qoder Repo Wiki / Code Wiki / DeepWiki 的对比 |
 | [调研与设计](docs/research-qoder-repo-wiki.md) | Qoder Repo Wiki 产品解剖与插件设计方案 |
+| [插件 API 参考](docs/cordis-plugin-api-reference.md) | Cordis / DSH 插件上下文的可用接口 |
 
 ## English
 
