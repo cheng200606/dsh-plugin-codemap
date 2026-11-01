@@ -192,6 +192,7 @@ scripts/            build-client（拼接 + 版本注入）、check-version
 
 | 文档 | 内容 |
 |---|---|
+| [更新日志](CHANGELOG.md) | 版本变更 |
 | [技术参考](docs/technical-reference.md) | 接口清单、流水线、安全边界、目录说明 |
 | [发布与安装](docs/publishing.md) | 四条安装路径、社区收录流程、npm 发布、上线检查清单 |
 | [发布检查清单](docs/release-checklist.md) | 每次发版的逐项核对表 |
