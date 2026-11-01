@@ -7,13 +7,13 @@
   "author": {
     "name": "程夏"
   },
-  "homepage": "https://github.com/OWNER/dsh-plugin-codemap#readme",
+  "homepage": "https://github.com/cheng200606/dsh-plugin-codemap#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/dsh-plugin-codemap.git"
+    "url": "git+https://github.com/cheng200606/dsh-plugin-codemap.git"
   },
   "bugs": {
-    "url": "https://github.com/OWNER/dsh-plugin-codemap/issues"
+    "url": "https://github.com/cheng200606/dsh-plugin-codemap/issues"
   },
   "main": "./index.js",
   "scripts": {

@@ -80,7 +80,7 @@ npm install -g dsh-plugin-codemap
 ### 方式三：本地开发（link）
 
 ```bash
-git clone https://github.com/OWNER/dsh-plugin-codemap.git
+git clone https://github.com/cheng200606/dsh-plugin-codemap.git
 cd dsh-plugin-codemap
 npm install          # 无运行时依赖，这一步只为建立 link
 ```
