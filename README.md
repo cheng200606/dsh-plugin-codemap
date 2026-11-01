@@ -78,20 +78,15 @@ AI 编程助手进入一个陌生仓库时，最贵的两件事是**读源码**�
 dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git
 ```
 
-安装后把 `dsh-plugin-codemap` 加进 profile 的 bundle 列表，并重启 Harness：
-
-```jsonc
-// ~/.dsh/profiles/<profile>/package.json
-{
-  "dsh": { "profile": { "bundles": ["dsh-plugin-codemap"] } }
-}
-```
+`dsh plugin add` 会把包写进 profile 的 `dependencies`，**并自动追加到 `dsh.profile.bundles`**；重启 Harness 即可看到左侧栏面板与 `/codemap` 命令。
 
 ### 方式二：插件市场（社区目录）
 
 1. 打开 Harness → 插件市场 → **源（Sources）**，添加：
    `https://cdn.jsdelivr.net/gh/cheng200606/dsh-plugin-codemap@main/market/index.json`
 2. 搜索 `codemap` → 一键安装
+
+<img src="docs/assets/market-discover.png" alt="在插件市场的发现页中看到 CodeMap" width="100%">
 
 > Harness 的市场默认不内置任何源，社区源的地址需要自己添加一次。收录进社区总目录（`dsh-plugin-catalog`）后，这一步会随总源自动生效。
 

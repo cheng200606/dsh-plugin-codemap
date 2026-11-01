@@ -134,6 +134,7 @@ pnpm install           # 建立 link
 
 | 事项 | 说明 |
 |---|---|
+| `dsh plugin add` 副作用 | 会把包写进 `dependencies`，并**自动追加到 `dsh.profile.bundles`**，不需要手工编辑 |
 | 改浏览器半体 | 改 `client/*.js`，再 `npm run build` 生成 `client.js`；**不要直接改 `client.js`** |
 | 生效方式 | 重启 Harness（或重载插件），面板与工具才会重新注册 |
 | 目录结构要求 | 包根必须有 `index.js`、`package.json`（含 `dsh.bundle`）、`cordis.patch.yml` |
@@ -156,3 +157,26 @@ pnpm install           # 建立 link
 | 8 | 许可与文档 | 仓库根 | `LICENSE`、`README`、`docs/` 齐全 |
 | 9 | 安装验证 | 干净环境 `dsh plugin add <spec>` | 插件出现在插件列表并可启用 |
 | 10 | 版本标签 | `git tag` | `v0.12.0` 与 `package.json` 一致，Release 已发布 |
+
+---
+
+## 7. 验证记录（2026-11-01）
+
+| 验证项 | 做法 | 结果 |
+|---|---|---|
+| 索引格式 | 用 DSH 自带 `parseMarketIndex` 解析 `market/index.json` | 通过，`marketInstallTarget()` 输出 `git+https://…git#7c0873…` |
+| 索引公网可读 | `curl` jsdelivr 地址 | 200，2632 B |
+| `dsh plugin add` | 隔离 profile `codemap-sandbox` 安装打好的 tgz | 成功，`dependencies` 与 `dsh.profile.bundles` 均自动写入 |
+| 安装包可加载 | `npm run verify:package`（干净目录安装后真实调用 `apply`） | 服务 / 4 工具 / 1 命令 / 提示词段全部注册 |
+| 市场端到端 | 真实 Harness：插件页 → 开启「自定义插件索引」→ 发现 → 添加索引源 | 卡片显示图标、标题、描述、标签、`0.12.0 · 程夏`，右侧标记**已安装**（截图 `docs/assets/market-discover.png`） |
+| 从 GitHub 直装 | `pnpm add git+https://…#<sha>` | 本机到 `codeload.github.com` 超时（网络问题，非包问题），spec 解析正确 |
+
+> 结论：插件侧与索引侧都没有阻塞项；**唯一未完成项是 npm 发布**，它决定「社区总目录里的一键安装」。
+
+### 7.1 市场的前置条件（容易踩的坑）
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 插件页没有「发现」标签 | 「自定义插件索引」实验开关默认关闭 | 插件页 → 实验性插件 → 打开「自定义插件索引」 |
+| 加了索引仍显示「还没有插件索引」 | `dsh web` 用的是 **web** profile；改 desktop 的 patch 不生效 | 在界面里添加，或改 `~/.dsh/profiles/web/cordis.patch.yml` |
+| 索引里的 `commit` 校验失败 | 不是 40 位小写十六进制 | 用 `git rev-parse HEAD` 的完整 SHA |
