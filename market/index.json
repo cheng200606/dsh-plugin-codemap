@@ -5,8 +5,8 @@
     "zh": "CodeMap 插件源"
   },
   "description": {
-    "en": "Self-hosted DeepSeek Harness plugin index for CodeMap and its future siblings. Add this URL under Plugin Market → Sources to install without publishing to npm.",
-    "zh": "CodeMap 及后续同系列插件的自托管索引。在插件市场 → 源地址里添加本 URL，即可在未发布 npm 包的情况下直接安装。"
+    "en": "Plugin index for CodeMap under the DeepSeek Harness market. Add this URL under Plugin Market → Sources to browse and install it.",
+    "zh": "CodeMap 在 DeepSeek Harness 插件市场里的索引。在插件市场 → 发现 → 添加索引源里粘贴本 URL，即可浏览并一键安装。"
   },
   "metadata": {
     "categories": {
@@ -62,11 +62,9 @@
       "versions": [
         {
           "version": "0.12.0",
-          "publishTimestamp": 1793500497,
+          "publishTimestamp": 1793502079,
           "source": {
-            "type": "git",
-            "url": "https://github.com/cheng200606/dsh-plugin-codemap",
-            "commit": "7c08739cd62ea2559b7df91c3d911cf245752bcd"
+            "type": "npm"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.5 <0.3.0-0"

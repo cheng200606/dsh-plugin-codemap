@@ -10,10 +10,10 @@
 
 | 路径 | 入口 | 现在可用 | 依赖 |
 |---|---|---|---|
-| **插件市场 → Discover**（社区目录） | 市场里搜索 `codemap` → 安装 | ⏳ 待收录 | 已发布 npm 包 + 社区目录 PR 合并 |
+| **插件市场 → Discover**（社区目录） | 市场里搜索 `codemap` → 安装 | ⏳ 待收录 | 社区目录 PR 合并 |
 | **插件市场 → 自托管索引** | 添加源地址 → 搜索 → 安装 | ✅ 可用 | 仅 GitHub |
 | **命令行（Git）** | `dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git#<commit>` | ✅ 可用 | Git + 网络 |
-| **命令行（npm）** | `dsh plugin add dsh-plugin-codemap@0.12.0` | ⏳ 待发布 | npm 凭据 |
+| **命令行（npm）** | `dsh plugin add dsh-plugin-codemap@0.12.0` | ✅ 已发布 | 无 |
 
 历史上 DSH 的市场**没有内置任何源**（`plugin-market` 的 `indexes` 默认为 `[]`），社区源由用户在设置里添加。因此「在市场里搜到」等价于两件事：**一个可读的 index.json**，加上**该条目指向的安装物真实存在**。
 
@@ -66,7 +66,7 @@ CI 会检查仓库年龄（过滤「PR 前几分钟才建好」的仓库）。�
 社区目录的每一条 `versions[].source` 都是 `{"type":"npm"}`，市场安装时拼成 `name@version`。所以**要一键安装，就必须有可解析的 npm 包**。
 
 ```bash
-# 1. 登录（本机 registry 现在是 npmmirror 镜像，不能发布）
+# 1. 登录（本机 registry 默认是 npmmirror 镜像，不能发布）
 npm config set registry https://registry.npmjs.org
 npm login
 
@@ -76,6 +76,10 @@ npm publish --access public
 # 3. 校验
 npm view dsh-plugin-codemap version dist.tarball repository.url
 ```
+
+**当前状态**：`dsh-plugin-codemap@0.12.0` 已于 2026-11-01 发布到 npmjs（maintainer `chengxia`），`dist-tags.latest = 0.12.0`，tarball 199 kB / 48 个文件。
+
+> 首次发布会留下一个 `0.0.0-stage` 占位版本（npm 的 staging 记录），`latest` 不受影响；清理它需要 `npm unpublish` 权限，当前 token 被拒（403）。忽略即可。
 
 发布成功后的自动关联：
 
@@ -98,14 +102,14 @@ https://cdn.jsdelivr.net/gh/cheng200606/dsh-plugin-codemap@main/market/index.jso
 |---|---|
 | `format` | `1` |
 | `plugins[0].name` | `dsh-plugin-codemap` |
-| `versions[0].source` | `{"type":"git","url":"https://github.com/cheng200606/dsh-plugin-codemap","commit":"7c0873…"}` |
-| 安装 spec | `git+https://github.com/cheng200606/dsh-plugin-codemap.git#7c0873…` |
+| `versions[0].source` | `{"type":"npm"}` |
+| 安装 spec | `dsh-plugin-codemap@0.12.0` |
 | `icon` | 相对路径 `icon.svg`，随索引源解析 |
 
 用户侧操作：**插件市场 → 源（Sources）→ 添加地址**，粘贴上面的 jsdelivr URL，即可搜索并一键安装。
 
 > 索引已用 DSH 内置校验器 `@deepseek-ai/dsh-plugin-market-index` 的 `parseMarketIndex` 验证通过；`marketInstallTarget()` 输出的 spec 与上表一致。
-> `commit` 必须是 **40 位小写十六进制**的完整 SHA，指向包含 `0.12.0` 代码的提交；发新版本时要同步改 `version`、`publishTimestamp`、`commit`。
+> 发新版本时同步改 `version` 与 `publishTimestamp`（Unix 秒）。若改用 git 源，`commit` 必须是 **40 位小写十六进制**的完整 SHA。
 
 ---
 
@@ -170,8 +174,11 @@ pnpm install           # 建立 link
 | 安装包可加载 | `npm run verify:package`（干净目录安装后真实调用 `apply`） | 服务 / 4 工具 / 1 命令 / 提示词段全部注册 |
 | 市场端到端 | 真实 Harness：插件页 → 开启「自定义插件索引」→ 发现 → 添加索引源 | 卡片显示图标、标题、描述、标签、`0.12.0 · 程夏`，右侧标记**已安装**（截图 `docs/assets/market-discover.png`） |
 | 从 GitHub 直装 | `pnpm add git+https://…#<sha>` | 本机到 `codeload.github.com` 超时（网络问题，非包问题），spec 解析正确 |
+| npm 发布 | `npm publish --access public` | 成功，`0.12.0`，48 个文件 / 199 kB |
+| npm 安装 | 干净目录 `pnpm add dsh-plugin-codemap` | 1.8 s 装好，版本 `0.12.0` |
+| 索引指向 npm | `parseMarketIndex` + `marketInstallTarget` | 输出 `dsh-plugin-codemap@0.12.0` |
 
-> 结论：插件侧与索引侧都没有阻塞项；**唯一未完成项是 npm 发布**，它决定「社区总目录里的一键安装」。
+> 结论：插件侧、索引侧、npm 侧均已闭环；**唯一未完成项是社区总目录（awesome-dsh-plugin）的收录 PR**。
 
 ### 7.1 市场的前置条件（容易踩的坑）
 

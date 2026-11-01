@@ -18,3 +18,6 @@ test/artifacts/
 # Editor / OS noise
 .DS_Store
 Thumbs.db
+
+# npm credentials (never commit)
+.npmrc
