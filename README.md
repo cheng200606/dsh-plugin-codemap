@@ -14,7 +14,7 @@
 
 | 概览 | 知识图谱 | 源码跳转 |
 |---|---|---|
-| ![overview](docs/assets/repowiki-overview-v011.png) | ![graph](docs/assets/repowiki-graph-v011.png) | ![source](docs/assets/repowiki-source-v011.png) |
+| ![overview](docs/assets/codemap-overview-v011.png) | ![graph](docs/assets/codemap-graph-v011.png) | ![source](docs/assets/codemap-source-v011.png) |
 
 ---
 
