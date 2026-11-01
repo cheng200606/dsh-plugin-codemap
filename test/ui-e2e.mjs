@@ -147,9 +147,20 @@ try {
   check('import asks for confirmation', (await page.locator('.codemap-modal').count()) === 1)
   await page.getByRole('button', { name: '取消' }).click()
 
+  // Whether the panel shows the "this language has no pages" banner depends on
+  // what is on disk, so ask the panel which languages exist before asserting.
+  const availableLanguages = await page.evaluate(async () => {
+    const response = await fetch('/api/codemap/panel')
+    const data = await response.json()
+    return Array.isArray(data.availableLanguages) ? data.availableLanguages : []
+  })
   await page.getByRole('button', { name: 'en', exact: true }).click()
   await page.waitForTimeout(900)
-  check('a missing translation explains itself', (await page.locator('.codemap-banner').count()) === 1)
+  if (availableLanguages.includes('en')) {
+    check('a generated language opens without a warning', (await page.locator('.codemap-banner').count()) === 0)
+  } else {
+    check('a missing translation explains itself', (await page.locator('.codemap-banner').count()) === 1)
+  }
   await page.getByRole('button', { name: 'zh', exact: true }).click()
   await page.waitForTimeout(700)
 

@@ -10,7 +10,7 @@
 | # | 检查项 | 状态 | 证据 |
 |---|---|---|---|
 | 1.1 | `package.json` 的 `name` 为 `dsh-plugin-codemap`（npm 可用名，registry 返回 404） | ✅ | `npm view dsh-plugin-codemap` → not found |
-| 1.2 | `version` 单调递增（0.12.0） | ✅ | `package.json` / `src/version.js` / `client.js` 三处一致 |
+| 1.2 | `version` 单调递增（0.12.1） | ✅ | `package.json` / `src/version.js` / `client.js` 三处一致 |
 | 1.3 | 不含 `private: true`（否则无法发布） | ✅ | `npm pack --dry-run` 成功 |
 | 1.4 | `dsh.bundle.patch` 指向 `./cordis.patch.yml` | ✅ | `verify-package.mjs` 断言 |
 | 1.5 | `cordis.patch.yml` 的 patch 行 `id: codemap` / `name: 'dsh-plugin-codemap'` | ✅ | 同上 |

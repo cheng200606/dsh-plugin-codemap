@@ -1,6 +1,6 @@
 # 发布与安装
 
-> 适用版本：`dsh-plugin-codemap@0.12.0` ｜ 更新：2026-11-01 ｜ 相关：[发布检查清单](release-checklist.md)
+> 适用版本：`dsh-plugin-codemap@0.12.1` ｜ 更新：2026-11-01 ｜ 相关：[发布检查清单](release-checklist.md)
 
 本文说明三条**把插件交付到别人机器上**的路径，以及把插件收录进 DeepSeek Harness 插件社区（Discover / 市场）的完整流程。
 
@@ -13,7 +13,7 @@
 | **插件市场 → Discover**（社区目录） | 市场里搜索 `codemap` → 安装 | ⏳ 待收录 | 社区目录 PR 合并 |
 | **插件市场 → 自托管索引** | 添加源地址 → 搜索 → 安装 | ✅ 可用 | 仅 GitHub |
 | **命令行（Git）** | `dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git#<commit>` | ✅ 可用 | Git + 网络 |
-| **命令行（npm）** | `dsh plugin add dsh-plugin-codemap@0.12.0` | ✅ 已发布 | 无 |
+| **命令行（npm）** | `dsh plugin add dsh-plugin-codemap@0.12.1` | ✅ 已发布 | 无 |
 
 历史上 DSH 的市场**没有内置任何源**（`plugin-market` 的 `indexes` 默认为 `[]`），社区源由用户在设置里添加。因此「在市场里搜到」等价于两件事：**一个可读的 index.json**，加上**该条目指向的安装物真实存在**。
 
@@ -77,7 +77,7 @@ npm publish --access public
 npm view dsh-plugin-codemap version dist.tarball repository.url
 ```
 
-**当前状态**：`dsh-plugin-codemap@0.12.0` 已于 2026-11-01 发布到 npmjs（maintainer `chengxia`），`dist-tags.latest = 0.12.0`，tarball 199 kB / 48 个文件。
+**当前状态**：`0.12.0`（2026-11-01）与 `0.12.1`（同日补丁：弹层遮挡修复）均已发布到 npmjs（maintainer `chengxia`），`dist-tags.latest = 0.12.1`，tarball 约 199 kB / 48 个文件。
 
 > 首次发布会留下一个 `0.0.0-stage` 占位版本（npm 的 staging 记录），`latest` 不受影响；清理它需要 `npm unpublish` 权限，当前 token 被拒（403）。忽略即可。
 
@@ -103,7 +103,7 @@ https://cdn.jsdelivr.net/gh/cheng200606/dsh-plugin-codemap@main/market/index.jso
 | `format` | `1` |
 | `plugins[0].name` | `dsh-plugin-codemap` |
 | `versions[0].source` | `{"type":"npm"}` |
-| 安装 spec | `dsh-plugin-codemap@0.12.0` |
+| 安装 spec | `dsh-plugin-codemap@0.12.1` |
 | `icon` | 相对路径 `icon.svg`，随索引源解析 |
 
 用户侧操作：**插件市场 → 源（Sources）→ 添加地址**，粘贴上面的 jsdelivr URL，即可搜索并一键安装。
@@ -160,7 +160,7 @@ pnpm install           # 建立 link
 | 7 | 清单 manifest | `package.json` | `dsh.bundle.patch` 存在且行 id 与包名一致 |
 | 8 | 许可与文档 | 仓库根 | `LICENSE`、`README`、`docs/` 齐全 |
 | 9 | 安装验证 | 干净环境 `dsh plugin add <spec>` | 插件出现在插件列表并可启用 |
-| 10 | 版本标签 | `git tag` | `v0.12.0` 与 `package.json` 一致，Release 已发布 |
+| 10 | 版本标签 | `git tag` | `v0.12.1` 与 `package.json` 一致，Release 已发布 |
 
 ---
 
@@ -174,9 +174,9 @@ pnpm install           # 建立 link
 | 安装包可加载 | `npm run verify:package`（干净目录安装后真实调用 `apply`） | 服务 / 4 工具 / 1 命令 / 提示词段全部注册 |
 | 市场端到端 | 真实 Harness：插件页 → 开启「自定义插件索引」→ 发现 → 添加索引源 | 卡片显示图标、标题、描述、标签、`0.12.0 · 程夏`，右侧标记**已安装**（截图 `docs/assets/market-discover.png`） |
 | 从 GitHub 直装 | `pnpm add git+https://…#<sha>` | 本机到 `codeload.github.com` 超时（网络问题，非包问题），spec 解析正确 |
-| npm 发布 | `npm publish --access public` | 成功，`0.12.0`，48 个文件 / 199 kB |
+| npm 发布 | `npm publish --access public` | 成功（`0.12.0`、`0.12.1`），48 个文件 / 199 kB |
 | npm 安装 | 干净目录 `pnpm add dsh-plugin-codemap` | 1.8 s 装好，版本 `0.12.0` |
-| 索引指向 npm | `parseMarketIndex` + `marketInstallTarget` | 输出 `dsh-plugin-codemap@0.12.0` |
+| 索引指向 npm | `parseMarketIndex` + `marketInstallTarget` | 输出 `dsh-plugin-codemap@0.12.1` |
 
 > 结论：插件侧、索引侧、npm 侧均已闭环；**唯一未完成项是社区总目录（awesome-dsh-plugin）的收录 PR**。
 

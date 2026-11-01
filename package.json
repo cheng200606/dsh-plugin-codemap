@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-codemap",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "type": "module",
   "description": "DeepSeek Harness 插件 CodeMap：把仓库编译成带 path:line 源码引用的代码地图。确定性生成页面与知识卡片、交互式知识图谱、模型工具 codemap_search/read/generate/status 与 /codemap 命令；零模型调用、离线可跑、引用可校验。",
   "license": "MIT",

@@ -13,22 +13,97 @@
     }
 
     /**
-     * The first opaque background colour above the panel. Host tokens are
-     * mostly translucent, so popovers need a real surface to sit on. Walking
-     * up from <body> follows the active light/dark theme without hard-coding
-     * either one.
+     * Resolve any CSS colour (rgb, rgba, `color(srgb …)`, named, `transparent`)
+     * into channels. The browser normalises the syntax through an off-screen
+     * element, so a theme token is never misread as opaque just because its
+     * serialisation differs from the expected string.
      *
-     * @param {string} fallback
+     * @param {string} value
+     * @returns {{ r: number, g: number, b: number, a: number } | null}
+     */
+    function colorParts(value) {
+      try {
+        const probe = document.createElement('span')
+        probe.style.display = 'none'
+        probe.style.color = value
+        document.body.appendChild(probe)
+        const computed = getComputedStyle(probe).color
+        probe.remove()
+        const rgb = computed.match(/rgba?\(([^)]+)\)/i)
+        if (rgb) {
+          const parts = rgb[1].split(/[\s,/]+/u).filter(Boolean).map(Number)
+          return {
+            r: parts[0] || 0,
+            g: parts[1] || 0,
+            b: parts[2] || 0,
+            a: parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1,
+          }
+        }
+        // Wide-gamut themes serialise as `color(srgb 0.1 0.1 0.12 / 0.5)`.
+        const srgb = computed.match(/color\(srgb\s+([^)]+)\)/i)
+        if (srgb) {
+          const parts = srgb[1].split(/[\s/]+/u).filter(Boolean).map(Number)
+          return {
+            r: Math.round((parts[0] || 0) * 255),
+            g: Math.round((parts[1] || 0) * 255),
+            b: Math.round((parts[2] || 0) * 255),
+            a: parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1,
+          }
+        }
+      } catch {
+        // A probe failure is not worth breaking the panel for.
+      }
+      return null
+    }
+
+    /** Composite `src` over `dst` (both opaque-after-blend channel objects). */
+    function blendOver(dst, src) {
+      const alpha = Math.min(1, Math.max(0, src.a))
+      return {
+        r: Math.round(src.r * alpha + dst.r * (1 - alpha)),
+        g: Math.round(src.g * alpha + dst.g * (1 - alpha)),
+        b: Math.round(src.b * alpha + dst.b * (1 - alpha)),
+        a: 1,
+      }
+    }
+
+    /**
+     * An **opaque** surface for popovers. Host tokens are mostly translucent,
+     * and the app shell often paints its background on a container rather than
+     * on <body>, so a popover that merely copies one ancestor colour ends up
+     * letting the page show through. Every translucent ancestor above <body> is
+     * therefore composited over a base chosen from the theme's text colour.
+     *
+     * @param {string} fallback used when there is no document (tests, SSR).
      * @returns {string}
      */
     function hostSurface(fallback = 'rgba(30,30,30,0.98)') {
       try {
-        let node = document.body
+        if (!document.body) return fallback
+        // The panel may live in a shell whose theme differs from <body> (a host
+        // that renders plugins in its own surface), so the shell decides both
+        // the light/dark base and where the ancestor walk starts.
+        const anchor = document.querySelector('.codemap-shell') || document.body
+        const text = colorParts(getComputedStyle(anchor).color) || colorParts(getComputedStyle(document.body).color)
+        // Light text means a dark shell; the base must match it, or a popover
+        // over a transparent shell would flash the wrong theme.
+        const dark = text ? text.r * 0.299 + text.g * 0.587 + text.b * 0.114 > 140 : true
+        let surface = dark ? { r: 24, g: 24, b: 26, a: 1 } : { r: 255, g: 255, b: 255, a: 1 }
+        const layers = []
+        let node = anchor
         while (node) {
-          const colour = getComputedStyle(node).backgroundColor
-          if (colour && colour !== 'transparent' && colour !== 'rgba(0, 0, 0, 0)') return colour
+          const parts = colorParts(getComputedStyle(node).backgroundColor)
+          if (parts && parts.a > 0.001) {
+            layers.push(parts)
+            if (parts.a >= 0.999) break
+          }
           node = node.parentElement
         }
+        // Collected nearest-first: paint from the farthest to the nearest.
+        for (let index = layers.length - 1; index >= 0; index -= 1) {
+          surface = blendOver(surface, layers[index])
+        }
+        return `rgb(${surface.r}, ${surface.g}, ${surface.b})`
       } catch {
         // No document: the fallback keeps the surface readable.
       }

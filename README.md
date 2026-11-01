@@ -69,7 +69,7 @@ AI 编程助手进入一个陌生仓库时，最贵的两件事是**读源码**�
 |---|---|---|
 | 插件市场 | 市场 → 添加源 → 搜索 `codemap` | 已收录后最省事 |
 | 命令行（Git） | `dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git` | **现在就能用**，无需 npm |
-| 命令行（npm） | `dsh plugin add dsh-plugin-codemap` | 已发布 0.12.0 |
+| 命令行（npm） | `dsh plugin add dsh-plugin-codemap` | 已发布 0.12.1 |
 | 本地开发 | `link:` 到 profile | 改代码 |
 
 ### 方式一：从 Git 直接安装（当前可用）
@@ -93,7 +93,7 @@ dsh plugin add git+https://github.com/cheng200606/dsh-plugin-codemap.git
 ### 方式三：npm
 
 ```bash
-dsh plugin add dsh-plugin-codemap          # 或 dsh plugin add dsh-plugin-codemap@0.12.0
+dsh plugin add dsh-plugin-codemap          # 或 dsh plugin add dsh-plugin-codemap@0.12.1
 ```
 
 已发布在 npm：<https://www.npmjs.com/package/dsh-plugin-codemap>。

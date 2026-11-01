@@ -56,6 +56,12 @@
   backdrop-filter: blur(14px) saturate(130%);
   flex-wrap: wrap;
   flex: 0 0 auto;
+  /* The popover menus hang out of the header. backdrop-filter already makes
+     the header a stacking context, but without a z-index the content column
+     (position: relative) paints over it, so page text showed through the menu.
+     Lifting the header above the content column fixes that ordering. */
+  position: relative;
+  z-index: 20;
 }
 .codemap-brand {
   display: inline-flex;
