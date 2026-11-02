@@ -124,7 +124,7 @@ export function apply(ctx, config) {
 
   ctx.effect(() => {
     const disposers = registerCommand(ctx, service)
-    if (disposers.length > 0) receipt.registered.command = 'wiki'
+    if (disposers.length > 0) receipt.registered.command = 'codemap'
     return () => {
       for (const dispose of disposers) {
         if (typeof dispose === 'function') dispose()
